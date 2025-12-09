@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
+	"time"
 
+	"github.com/Varun5711/shorternit/internal/database"
 	"github.com/Varun5711/shorternit/internal/idgen"
 	"github.com/Varun5711/shorternit/internal/service"
 	"github.com/Varun5711/shorternit/internal/storage"
@@ -19,7 +22,29 @@ func main() {
 		log.Fatalf("Failed to create ID generator: %v", err)
 	}
 
-	store := storage.NewMemoryStorage()
+	dbConfig := database.Config{
+		PrimaryDSN: "postgres://urlshortener:devpassword@localhost:5432/urlshortener?sslmode=disable",
+		ReplicaDSNs: []string{
+			"postgres://urlshortener:devpassword@localhost:5433/urlshortener?sslmode=disable",
+			"postgres://urlshortener:devpassword@localhost:5434/urlshortener?sslmode=disable",
+			"postgres://urlshortener:devpassword@localhost:5435/urlshortener?sslmode=disable",
+		},
+		MaxConns:        25,
+		MinConns:        5,
+		MaxConnLifetime: time.Hour,
+		MaxConnIdleTime: 30 * time.Minute,
+	}
+
+	ctx := context.Background()
+	dbManager, err := database.NewDBManager(ctx, dbConfig)
+	if err != nil {
+		log.Fatalf("Failed to create DB manager: %v", err)
+	}
+	defer dbManager.Close()
+
+	log.Println("Connected to PostgreSQL (1 primary + 3 replicas)")
+
+	store := storage.NewPostgresStorage(dbManager)
 	urlService := service.NewURLService(store, idGen)
 
 	grpcServer := grpc.NewServer()

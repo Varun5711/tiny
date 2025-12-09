@@ -15,11 +15,11 @@ import (
 
 type URLService struct {
 	pb.UnimplementedURLServiceServer
-	store *storage.MemoryStorage
+	store storage.Storage
 	idGen *idgen.Generator
 }
 
-func NewURLService(store *storage.MemoryStorage, idGen *idgen.Generator) *URLService {
+func NewURLService(store storage.Storage, idGen *idgen.Generator) *URLService {
 	return &URLService{
 		store: store,
 		idGen: idGen,

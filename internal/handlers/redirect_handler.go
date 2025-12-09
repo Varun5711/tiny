@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	grpcClient "github.com/Varun5711/shorternit/internal/grpc"
@@ -46,12 +47,12 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	go func() {
-		incrementReq := &pb.IncrementClicksRequest{
-			ShortCode: shortCode,
-		}
-		h.grpcClient.IncrementClicks(context.Background(), incrementReq)
-	}()
+	incrementReq := &pb.IncrementClicksRequest{
+		ShortCode: shortCode,
+	}
+	if _, err := h.grpcClient.IncrementClicks(ctx, incrementReq); err != nil {
+		log.Printf("WARNING: Failed to increment clicks for %s: %v", shortCode, err)
+	}
 
 	http.Redirect(w, r, grpcResp.Url.LongUrl, http.StatusFound)
 }

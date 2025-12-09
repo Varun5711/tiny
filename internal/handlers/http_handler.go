@@ -59,7 +59,7 @@ func (h *HTTPHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 
 	res := models.CreateURLResponse{
 		ShortCode: grpcResp.ShortCode,
-		ShortURL:  grpcResp.ShortUrl,
+		ShortURL:  h.baseURL + "/" + grpcResp.ShortCode,
 		LongURL:   grpcResp.LongUrl,
 		CreatedAt: time.Unix(grpcResp.CreatedAt, 0),
 	}
