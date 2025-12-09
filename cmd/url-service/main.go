@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"log"
 	"net"
-	"time"
 
+	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/database"
 	"github.com/Varun5711/shorternit/internal/idgen"
+	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/service"
 	"github.com/Varun5711/shorternit/internal/storage"
 	pb "github.com/Varun5711/shorternit/proto/url"
@@ -15,34 +15,33 @@ import (
 )
 
 func main() {
-	log.Println("Starting URL Service...")
+	log := logger.New("url-service")
 
-	idGen, err := idgen.NewGenerator(1, 1)
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to create ID generator: %v", err)
+		log.Fatal("Failed to load config: %v", err)
+	}
+
+	idGen, err := idgen.NewGenerator(cfg.Snowflake.DatacenterID, cfg.Snowflake.WorkerID)
+	if err != nil {
+		log.Fatal("Failed to create ID generator: %v", err)
 	}
 
 	dbConfig := database.Config{
-		PrimaryDSN: "postgres://urlshortener:devpassword@localhost:5432/urlshortener?sslmode=disable",
-		ReplicaDSNs: []string{
-			"postgres://urlshortener:devpassword@localhost:5433/urlshortener?sslmode=disable",
-			"postgres://urlshortener:devpassword@localhost:5434/urlshortener?sslmode=disable",
-			"postgres://urlshortener:devpassword@localhost:5435/urlshortener?sslmode=disable",
-		},
-		MaxConns:        25,
-		MinConns:        5,
-		MaxConnLifetime: time.Hour,
-		MaxConnIdleTime: 30 * time.Minute,
+		PrimaryDSN:      cfg.Database.PrimaryDSN,
+		ReplicaDSNs:     cfg.Database.ReplicaDSNs,
+		MaxConns:        cfg.Database.MaxConns,
+		MinConns:        cfg.Database.MinConns,
+		MaxConnLifetime: cfg.Database.MaxConnLifetime,
+		MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
 	}
 
 	ctx := context.Background()
 	dbManager, err := database.NewDBManager(ctx, dbConfig)
 	if err != nil {
-		log.Fatalf("Failed to create DB manager: %v", err)
+		log.Fatal("Failed to connect to database: %v", err)
 	}
 	defer dbManager.Close()
-
-	log.Println("Connected to PostgreSQL (1 primary + 3 replicas)")
 
 	store := storage.NewPostgresStorage(dbManager)
 	urlService := service.NewURLService(store, idGen)
@@ -52,12 +51,12 @@ func main() {
 
 	listener, err := net.Listen("tcp", ":50051")
 	if err != nil {
-		log.Fatalf("Failed to listen on port 50051: %v", err)
+		log.Fatal("Failed to listen on :50051: %v", err)
 	}
 
-	log.Println("URL Service listening on :50051")
+	log.Info("Listening on :50051")
 
 	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
+		log.Fatal("Server error: %v", err)
 	}
 }

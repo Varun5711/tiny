@@ -1,0 +1,15 @@
+procs:
+  postgres:
+    shell: "cd deployments/docker && docker-compose up"
+
+  url-service:
+    shell: "go run cmd/url-service/main.go"
+
+  api-gateway:
+    shell: "go run cmd/api-gateway/main.go"
+
+  redirect-service:
+    shell: "go run cmd/redirect-service/main.go"
+
+  analytics-worker:
+    shell: "go run cmd/analytics-worker/main.go"
