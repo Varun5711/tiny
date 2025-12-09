@@ -2,25 +2,31 @@ package handlers
 
 import (
 	"context"
-	"log"
 	"net/http"
+	"time"
 
+	"github.com/Varun5711/shorternit/internal/events"
 	grpcClient "github.com/Varun5711/shorternit/internal/grpc"
+	"github.com/Varun5711/shorternit/internal/logger"
 	pb "github.com/Varun5711/shorternit/proto/url"
 )
 
 type RedirectHandler struct {
-	grpcClient pb.URLServiceClient
+	grpcClient    pb.URLServiceClient
+	clickProducer *events.ClickProducer
+	log           *logger.Logger
 }
 
-func NewRedirectHandler(urlServiceAddr string) (*RedirectHandler, error) {
+func NewRedirectHandler(urlServiceAddr string, producer *events.ClickProducer) (*RedirectHandler, error) {
 	client, err := grpcClient.NewURLServiceClient(urlServiceAddr)
 	if err != nil {
 		return nil, err
 	}
 
 	return &RedirectHandler{
-		grpcClient: client,
+		grpcClient:    client,
+		clickProducer: producer,
+		log:           logger.New("redirect"),
 	}, nil
 }
 
@@ -38,6 +44,7 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 	ctx := context.Background()
 	grpcResp, err := h.grpcClient.GetURL(ctx, grpcReq)
 	if err != nil {
+		h.log.Error("Failed to get URL: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -47,11 +54,14 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	incrementReq := &pb.IncrementClicksRequest{
+	clickEvent := &events.ClickEvent{
 		ShortCode: shortCode,
+		Timestamp: time.Now().Unix(),
+		IP:        r.RemoteAddr,
+		UserAgent: r.UserAgent(),
 	}
-	if _, err := h.grpcClient.IncrementClicks(ctx, incrementReq); err != nil {
-		log.Printf("WARNING: Failed to increment clicks for %s: %v", shortCode, err)
+	if err := h.clickProducer.Publish(ctx, clickEvent); err != nil {
+		h.log.Warn("Failed to publish click event: %v", err)
 	}
 
 	http.Redirect(w, r, grpcResp.Url.LongUrl, http.StatusFound)

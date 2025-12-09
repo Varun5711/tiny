@@ -1,0 +1,125 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"time"
+
+	"github.com/joho/godotenv"
+)
+
+type Config struct {
+	Database  DatabaseConfig
+	Redis     RedisConfig
+	Services  ServicesConfig
+	Analytics AnalyticsConfig
+	Snowflake SnowflakeConfig
+}
+
+type DatabaseConfig struct {
+	PrimaryDSN      string
+	ReplicaDSNs     []string
+	MaxConns        int32
+	MinConns        int32
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+}
+
+type RedisConfig struct {
+	Addr       string
+	Password   string
+	DB         int
+	StreamName string
+}
+
+type ServicesConfig struct {
+	URLServiceAddr      string
+	APIGatewayPort      string
+	RedirectServicePort string
+	BaseURL             string
+}
+
+type AnalyticsConfig struct {
+	ConsumerGroup string
+	ConsumerName  string
+	BatchSize     int
+	PollInterval  time.Duration
+	BlockTime     time.Duration
+}
+
+type SnowflakeConfig struct {
+	DatacenterID int64
+	WorkerID     int64
+}
+
+func Load() (*Config, error) {
+	if err := godotenv.Load(); err != nil {
+		return nil, fmt.Errorf("error loading .env file: %w", err)
+	}
+
+	cfg := &Config{
+		Database: DatabaseConfig{
+			PrimaryDSN: getEnv("DB_PRIMARY_DSN", ""),
+			ReplicaDSNs: []string{
+				getEnv("DB_REPLICA1_DSN", ""),
+				getEnv("DB_REPLICA2_DSN", ""),
+				getEnv("DB_REPLICA3_DSN", ""),
+			},
+			MaxConns:        int32(getEnvAsInt("DB_MAX_CONNS", 25)),
+			MinConns:        int32(getEnvAsInt("DB_MIN_CONNS", 5)),
+			MaxConnLifetime: getEnvAsDuration("DB_MAX_CONN_LIFETIME", time.Hour),
+			MaxConnIdleTime: getEnvAsDuration("DB_MAX_CONN_IDLE_TIME", 30*time.Minute),
+		},
+		Redis: RedisConfig{
+			Addr:       getEnv("REDIS_ADDR", "localhost:6379"),
+			Password:   getEnv("REDIS_PASSWORD", ""),
+			DB:         getEnvAsInt("REDIS_DB", 0),
+			StreamName: getEnv("REDIS_STREAM_NAME", "clicks:stream"),
+		},
+		Services: ServicesConfig{
+			URLServiceAddr:      getEnv("URL_SERVICE_ADDR", "localhost:50051"),
+			APIGatewayPort:      getEnv("API_GATEWAY_PORT", "8080"),
+			RedirectServicePort: getEnv("REDIRECT_SERVICE_PORT", "8081"),
+			BaseURL:             getEnv("BASE_URL", "http://localhost:8081"),
+		},
+		Analytics: AnalyticsConfig{
+			ConsumerGroup: getEnv("ANALYTICS_CONSUMER_GROUP", "analytics-group"),
+			ConsumerName:  getEnv("ANALYTICS_CONSUMER_NAME", "worker-1"),
+			BatchSize:     getEnvAsInt("ANALYTICS_BATCH_SIZE", 100),
+			PollInterval:  getEnvAsDuration("ANALYTICS_POLL_INTERVAL", time.Second),
+			BlockTime:     getEnvAsDuration("ANALYTICS_BLOCK_TIME", 5*time.Second),
+		},
+		Snowflake: SnowflakeConfig{
+			DatacenterID: int64(getEnvAsInt("SNOWFLAKE_DATACENTER_ID", 1)),
+			WorkerID:     int64(getEnvAsInt("SNOWFLAKE_WORKER_ID", 1)),
+		},
+	}
+
+	return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
+}

@@ -1,21 +1,24 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
+	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/handlers"
+	"github.com/Varun5711/shorternit/internal/logger"
 )
 
 func main() {
-	log.Println("Starting API Gateway...")
+	log := logger.New("api-gateway")
 
-	urlServiceAddr := "localhost:50051"
-	baseURL := "http://localhost:8081"
-
-	httpHandler, err := handlers.NewHTTPHandler(urlServiceAddr, baseURL)
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to connect to url-service: %v", err)
+		log.Fatal("Failed to load config: %v", err)
+	}
+
+	httpHandler, err := handlers.NewHTTPHandler(cfg.Services.URLServiceAddr, cfg.Services.BaseURL)
+	if err != nil {
+		log.Fatal("Failed to connect to url-service: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -30,11 +33,9 @@ func main() {
 		}
 	})
 
-	log.Println("API Gateway listening on :8080")
-	log.Println("POST /api/urls - Create short URL")
-	log.Println("GET  /api/urls - List all URLs")
+	log.Info("Listening on :%s", cfg.Services.APIGatewayPort)
 
-	if err := http.ListenAndServe(":8080", mux); err != nil {
-		log.Fatalf("Failed to start HTTP server: %v", err)
+	if err := http.ListenAndServe(":"+cfg.Services.APIGatewayPort, mux); err != nil {
+		log.Fatal("Server error: %v", err)
 	}
 }
