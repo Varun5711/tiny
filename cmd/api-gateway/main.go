@@ -11,7 +11,7 @@ func main() {
 	log.Println("Starting API Gateway...")
 
 	urlServiceAddr := "localhost:50051"
-	baseURL := "http://localhost:8080"
+	baseURL := "http://localhost:8081"
 
 	httpHandler, err := handlers.NewHTTPHandler(urlServiceAddr, baseURL)
 	if err != nil {

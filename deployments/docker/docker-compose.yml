@@ -34,16 +34,24 @@ services:
     environment:
       POSTGRES_USER: urlshortener
       POSTGRES_PASSWORD: devpassword
-    user: postgres
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
     command: |
       bash -c "
+      until pg_isready -h postgres-primary -p 5432 -U urlshortener; do
+        echo 'Waiting for primary to be ready...'
+        sleep 2
+      done
+
       if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
-        until PGPASSWORD=replicator_password pg_basebackup --pgdata=/var/lib/postgresql/data -R --slot=replication_slot_1 --host=postgres-primary --port=5432 -U replicator; do
-          echo 'Waiting for primary...'
-          sleep 2
-        done
+        echo 'Cloning primary database...'
+        rm -rf /var/lib/postgresql/data/*
+        pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -R -S replication_slot_1
       fi
-      postgres
+
+      chown -R postgres:postgres /var/lib/postgresql/data
+      chmod 700 /var/lib/postgresql/data
+      exec gosu postgres postgres
       "
     ports:
       - "5433:5432"
@@ -61,16 +69,24 @@ services:
     environment:
       POSTGRES_USER: urlshortener
       POSTGRES_PASSWORD: devpassword
-    user: postgres
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
     command: |
       bash -c "
+      until pg_isready -h postgres-primary -p 5432 -U urlshortener; do
+        echo 'Waiting for primary to be ready...'
+        sleep 2
+      done
+
       if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
-        until PGPASSWORD=replicator_password pg_basebackup --pgdata=/var/lib/postgresql/data -R --slot=replication_slot_2 --host=postgres-primary --port=5432 -U replicator; do
-          echo 'Waiting for primary...'
-          sleep 2
-        done
+        echo 'Cloning primary database...'
+        rm -rf /var/lib/postgresql/data/*
+        pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -R -S replication_slot_2
       fi
-      postgres
+
+      chown -R postgres:postgres /var/lib/postgresql/data
+      chmod 700 /var/lib/postgresql/data
+      exec gosu postgres postgres
       "
     ports:
       - "5434:5432"
@@ -88,16 +104,24 @@ services:
     environment:
       POSTGRES_USER: urlshortener
       POSTGRES_PASSWORD: devpassword
-    user: postgres
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
     command: |
       bash -c "
+      until pg_isready -h postgres-primary -p 5432 -U urlshortener; do
+        echo 'Waiting for primary to be ready...'
+        sleep 2
+      done
+
       if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
-        until PGPASSWORD=replicator_password pg_basebackup --pgdata=/var/lib/postgresql/data -R --slot=replication_slot_3 --host=postgres-primary --port=5432 -U replicator; do
-          echo 'Waiting for primary...'
-          sleep 2
-        done
+        echo 'Cloning primary database...'
+        rm -rf /var/lib/postgresql/data/*
+        pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -R -S replication_slot_3
       fi
-      postgres
+
+      chown -R postgres:postgres /var/lib/postgresql/data
+      chmod 700 /var/lib/postgresql/data
+      exec gosu postgres postgres
       "
     ports:
       - "5435:5432"
@@ -109,11 +133,28 @@ services:
       postgres-primary:
         condition: service_healthy
 
+  redis:
+    image: redis:7-alpine
+    container_name: url-shortener-redis
+    command: redis-server --appendonly yes --appendfsync everysec
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - url-shortener-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres-primary-data:
   postgres-replica1-data:
   postgres-replica2-data:
   postgres-replica3-data:
+  redis-data:
 
 networks:
   url-shortener-network:
