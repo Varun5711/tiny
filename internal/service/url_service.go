@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Varun5711/shorternit/internal/cache"
 	"github.com/Varun5711/shorternit/internal/idgen"
 	"github.com/Varun5711/shorternit/internal/models"
 	"github.com/Varun5711/shorternit/internal/storage"
@@ -17,12 +18,14 @@ type URLService struct {
 	pb.UnimplementedURLServiceServer
 	store storage.Storage
 	idGen *idgen.Generator
+	cache *cache.Cache
 }
 
-func NewURLService(store storage.Storage, idGen *idgen.Generator) *URLService {
+func NewURLService(store storage.Storage, idGen *idgen.Generator, urlCache *cache.Cache) *URLService {
 	return &URLService{
 		store: store,
 		idGen: idGen,
+		cache: urlCache,
 	}
 }
 
@@ -50,6 +53,9 @@ func (s *URLService) CreateURL(ctx context.Context, req *pb.CreateURLRequest) (*
 	if err := s.store.Save(url); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to save URL: %v", err)
 	}
+
+	cacheKey := "url:" + shortCode
+	_ = s.cache.Set(ctx, cacheKey, req.LongUrl)
 
 	return &pb.CreateURLResponse{
 		ShortCode: shortCode,
@@ -166,6 +172,9 @@ func (s *URLService) DeleteURL(ctx context.Context, req *pb.DeleteURLRequest) (*
 			Success: false,
 		}, nil
 	}
+
+	cacheKey := "url:" + req.ShortCode
+	_ = s.cache.Delete(ctx, cacheKey)
 
 	return &pb.DeleteURLResponse{
 		Success: true,

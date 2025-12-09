@@ -4,10 +4,12 @@ import (
 	"context"
 	"net"
 
+	"github.com/Varun5711/shorternit/internal/cache"
 	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/database"
 	"github.com/Varun5711/shorternit/internal/idgen"
 	"github.com/Varun5711/shorternit/internal/logger"
+	"github.com/Varun5711/shorternit/internal/redis"
 	"github.com/Varun5711/shorternit/internal/service"
 	"github.com/Varun5711/shorternit/internal/storage"
 	pb "github.com/Varun5711/shorternit/proto/url"
@@ -27,6 +29,24 @@ func main() {
 		log.Fatal("Failed to create ID generator: %v", err)
 	}
 
+	ctx := context.Background()
+
+	redisClient, err := redis.NewRedisClient(ctx, redis.Config{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	if err != nil {
+		log.Fatal("Failed to connect to Redis: %v", err)
+	}
+	defer redisClient.Close()
+
+	urlCache := cache.NewMultiTierCache(
+		cfg.Cache.L1Capacity,
+		redisClient.GetClient(),
+		cfg.Cache.L2TTL,
+	)
+
 	dbConfig := database.Config{
 		PrimaryDSN:      cfg.Database.PrimaryDSN,
 		ReplicaDSNs:     cfg.Database.ReplicaDSNs,
@@ -36,7 +56,6 @@ func main() {
 		MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
 	}
 
-	ctx := context.Background()
 	dbManager, err := database.NewDBManager(ctx, dbConfig)
 	if err != nil {
 		log.Fatal("Failed to connect to database: %v", err)
@@ -44,7 +63,7 @@ func main() {
 	defer dbManager.Close()
 
 	store := storage.NewPostgresStorage(dbManager)
-	urlService := service.NewURLService(store, idGen)
+	urlService := service.NewURLService(store, idGen, urlCache)
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterURLServiceServer(grpcServer, urlService)

@@ -15,6 +15,7 @@ type Config struct {
 	Services  ServicesConfig
 	Analytics AnalyticsConfig
 	Snowflake SnowflakeConfig
+	Cache     CacheConfig
 }
 
 type DatabaseConfig struct {
@@ -53,6 +54,11 @@ type SnowflakeConfig struct {
 	WorkerID     int64
 }
 
+type CacheConfig struct {
+	L1Capacity int
+	L2TTL      time.Duration
+}
+
 func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
 		return nil, fmt.Errorf("error loading .env file: %w", err)
@@ -89,6 +95,10 @@ func Load() (*Config, error) {
 			BatchSize:     getEnvAsInt("ANALYTICS_BATCH_SIZE", 100),
 			PollInterval:  getEnvAsDuration("ANALYTICS_POLL_INTERVAL", time.Second),
 			BlockTime:     getEnvAsDuration("ANALYTICS_BLOCK_TIME", 5*time.Second),
+		},
+		Cache: CacheConfig{
+			L1Capacity: getEnvAsInt("CACHE_L1_CAPACITY", 10000),
+			L2TTL:      getEnvAsDuration("CACHE_L2_TTL", time.Hour),
 		},
 		Snowflake: SnowflakeConfig{
 			DatacenterID: int64(getEnvAsInt("SNOWFLAKE_DATACENTER_ID", 1)),
