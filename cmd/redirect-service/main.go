@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Varun5711/shorternit/internal/cache"
 	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/events"
 	"github.com/Varun5711/shorternit/internal/handlers"
@@ -29,9 +30,15 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	urlCache := cache.NewMultiTierCache(
+		cfg.Cache.L1Capacity,
+		redisClient.GetClient(),
+		cfg.Cache.L2TTL,
+	)
+
 	clickProducer := events.NewClickProducer(redisClient.GetClient(), cfg.Redis.StreamName)
 
-	redirectHandler, err := handlers.NewRedirectHandler(cfg.Services.URLServiceAddr, clickProducer)
+	redirectHandler, err := handlers.NewRedirectHandler(cfg.Services.URLServiceAddr, clickProducer, urlCache)
 	if err != nil {
 		log.Fatal("Failed to connect to url-service: %v", err)
 	}
