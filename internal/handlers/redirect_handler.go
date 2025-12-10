@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"context"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Varun5711/shorternit/internal/cache"
+	"github.com/Varun5711/shorternit/internal/cassandra"
 	"github.com/Varun5711/shorternit/internal/events"
 	grpcClient "github.com/Varun5711/shorternit/internal/grpc"
 	"github.com/Varun5711/shorternit/internal/logger"
@@ -16,10 +19,11 @@ type RedirectHandler struct {
 	grpcClient    pb.URLServiceClient
 	clickProducer *events.ClickProducer
 	cache         *cache.Cache
+	cassandra     *cassandra.CassandraClient
 	log           *logger.Logger
 }
 
-func NewRedirectHandler(urlServiceAddr string, producer *events.ClickProducer, urlCache *cache.Cache) (*RedirectHandler, error) {
+func NewRedirectHandler(urlServiceAddr string, producer *events.ClickProducer, urlCache *cache.Cache, cassandraClient *cassandra.CassandraClient) (*RedirectHandler, error) {
 	client, err := grpcClient.NewURLServiceClient(urlServiceAddr)
 	if err != nil {
 		return nil, err
@@ -29,6 +33,7 @@ func NewRedirectHandler(urlServiceAddr string, producer *events.ClickProducer, u
 		grpcClient:    client,
 		clickProducer: producer,
 		cache:         urlCache,
+		cassandra:     cassandraClient,
 		log:           logger.New("redirect"),
 	}, nil
 }
@@ -75,6 +80,23 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	clientIP := getClientIP(r)
+
+	h.log.Debug("Writing click to Cassandra for %s (IP: %s)", shortCode, clientIP)
+	session := h.cassandra.GetSession()
+	err := session.Query(`
+		INSERT INTO recent_clicks (
+			short_code, clicked_at, click_id,
+			ip_address, user_agent, referer
+		) VALUES (?, ?, now(), ?, ?, ?)
+	`, shortCode, time.Now(), clientIP, r.UserAgent(), r.Referer()).Exec()
+
+	if err != nil {
+		h.log.Error("Failed to write to Cassandra: %v", err)
+	} else {
+		h.log.Debug("Successfully wrote click to Cassandra")
+	}
+
 	clickEvent := &events.ClickEvent{
 		ShortCode: shortCode,
 		Timestamp: time.Now().Unix(),
@@ -86,4 +108,28 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 	}
 
 	http.Redirect(w, r, longURL, http.StatusFound)
+}
+
+func getClientIP(r *http.Request) string {
+	forwarded := r.Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		ips := strings.Split(forwarded, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	realIP := r.Header.Get("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+
+	if ip == "::1" {
+		return "127.0.0.1"
+	}
+
+	return ip
 }

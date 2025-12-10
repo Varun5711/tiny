@@ -1,8 +1,8 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres-primary:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-primary
     environment:
       POSTGRES_USER: urlshortener
@@ -15,6 +15,7 @@ services:
       -c max_wal_senders=10
       -c max_replication_slots=10
       -c hot_standby_feedback=on
+      -c shared_preload_libraries=timescaledb
     ports:
       - "5432:5432"
     volumes:
@@ -29,7 +30,7 @@ services:
       retries: 5
 
   postgres-replica1:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-replica1
     environment:
       POSTGRES_USER: urlshortener
@@ -64,7 +65,7 @@ services:
         condition: service_healthy
 
   postgres-replica2:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-replica2
     environment:
       POSTGRES_USER: urlshortener
@@ -99,7 +100,7 @@ services:
         condition: service_healthy
 
   postgres-replica3:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-replica3
     environment:
       POSTGRES_USER: urlshortener
@@ -153,7 +154,7 @@ services:
     image: cassandra:4.1
     container_name: cassandra
     ports:
-      - "9042:9042"  # CQL port
+      - "9042:9042" # CQL port
     environment:
       - CASSANDRA_CLUSTER_NAME=urlshortener
       - CASSANDRA_DC=dc1

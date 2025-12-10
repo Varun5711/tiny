@@ -13,3 +13,6 @@ procs:
 
   analytics-worker:
     shell: "go run cmd/analytics-worker/main.go"
+
+  pipeline-worker:
+    shell: "go run cmd/pipeline-worker/main.go"
