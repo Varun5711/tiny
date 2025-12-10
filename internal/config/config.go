@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -16,6 +17,8 @@ type Config struct {
 	Analytics AnalyticsConfig
 	Snowflake SnowflakeConfig
 	Cache     CacheConfig
+	RateLimit RateLimitConfig
+	Cassandra CassandraConfig
 }
 
 type DatabaseConfig struct {
@@ -32,6 +35,12 @@ type RedisConfig struct {
 	Password   string
 	DB         int
 	StreamName string
+}
+
+type CassandraConfig struct {
+	Hosts       []string
+	Keyspace    string
+	Consistency string
 }
 
 type ServicesConfig struct {
@@ -57,6 +66,11 @@ type SnowflakeConfig struct {
 type CacheConfig struct {
 	L1Capacity int
 	L2TTL      time.Duration
+}
+
+type RateLimitConfig struct {
+	Requests int
+	Window   time.Duration
 }
 
 func Load() (*Config, error) {
@@ -89,6 +103,11 @@ func Load() (*Config, error) {
 			RedirectServicePort: getEnv("REDIRECT_SERVICE_PORT", "8081"),
 			BaseURL:             getEnv("BASE_URL", "http://localhost:8081"),
 		},
+		Cassandra: CassandraConfig{
+			Hosts:       strings.Split(getEnv("CASSANDRA_HOSTS", "localhost"), ","),
+			Keyspace:    getEnv("CASSANDRA_KEYSPACE", "urlshortener"),
+			Consistency: getEnv("CASSANDRA_CONSISTENCY", "ONE"),
+		},
 		Analytics: AnalyticsConfig{
 			ConsumerGroup: getEnv("ANALYTICS_CONSUMER_GROUP", "analytics-group"),
 			ConsumerName:  getEnv("ANALYTICS_CONSUMER_NAME", "worker-1"),
@@ -99,6 +118,10 @@ func Load() (*Config, error) {
 		Cache: CacheConfig{
 			L1Capacity: getEnvAsInt("CACHE_L1_CAPACITY", 10000),
 			L2TTL:      getEnvAsDuration("CACHE_L2_TTL", time.Hour),
+		},
+		RateLimit: RateLimitConfig{
+			Requests: getEnvAsInt("RATE_LIMIT_REQUESTS", 100),
+			Window:   getEnvAsDuration("RATE_LIMIT_WINDOW", time.Minute),
 		},
 		Snowflake: SnowflakeConfig{
 			DatacenterID: int64(getEnvAsInt("SNOWFLAKE_DATACENTER_ID", 1)),
