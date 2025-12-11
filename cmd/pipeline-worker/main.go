@@ -2,211 +2,230 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/Varun5711/shorternit/internal/cassandra"
+	"github.com/Varun5711/shorternit/internal/clickhouse"
 	"github.com/Varun5711/shorternit/internal/config"
-	"github.com/Varun5711/shorternit/internal/database"
 	"github.com/Varun5711/shorternit/internal/enrichment"
 	"github.com/Varun5711/shorternit/internal/logger"
-	"github.com/gocql/gocql"
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
 var log *logger.Logger
 
 func main() {
 	log = logger.New("pipeline-worker")
+	log.Info("Starting pipeline worker...")
 
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("Failed to load config: %v", err)
 	}
 
-	ctx := context.Background()
-	cassandraClient, err := cassandra.NewCassandraClient(cassandra.Config{
-		Hosts:       cfg.Cassandra.Hosts,
-		Keyspace:    cfg.Cassandra.Keyspace,
-		Consistency: cfg.Cassandra.Consistency,
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
 	})
-	if err != nil {
-		log.Fatal("Failed to connect to Cassandra: %v", err)
-	}
-	defer cassandraClient.Close()
+	defer redisClient.Close()
 
-	dbConfig := database.Config{
-		PrimaryDSN:      cfg.Database.PrimaryDSN,
-		ReplicaDSNs:     cfg.Database.ReplicaDSNs,
-		MaxConns:        cfg.Database.MaxConns,
-		MinConns:        cfg.Database.MinConns,
-		MaxConnLifetime: cfg.Database.MaxConnLifetime,
-		MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatal("Failed to connect to Redis: %v", err)
 	}
+	log.Info("Connected to Redis at %s", cfg.Redis.Addr)
 
-	dbManager, err := database.NewDBManager(ctx, dbConfig)
+	chClient, err := clickhouse.NewClient(cfg.ClickHouse)
 	if err != nil {
-		log.Fatal("Failed to connect to database: %v", err)
+		log.Fatal("Failed to connect to ClickHouse: %v", err)
 	}
-	defer dbManager.Close()
+	defer chClient.Close()
+	log.Info("Connected to ClickHouse at %s", cfg.ClickHouse.Addr)
 
 	geoEnricher := enrichment.NewGeoIPEnricher()
 	defer geoEnricher.Close()
 
-	log.Info("Pipeline worker started, running every hour")
+	err = redisClient.XGroupCreateMkStream(ctx, cfg.Redis.StreamName, cfg.Analytics.ConsumerGroup,
+		"0").Err()
+	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
+		log.Fatal("Failed to create consumer group: %v", err)
+	}
+	log.Info("Consumer group '%s' ready", cfg.Analytics.ConsumerGroup)
 
-	ticker := time.NewTicker(1 * time.Hour)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	worker := &PipelineWorker{
+		redisClient:   redisClient,
+		chClient:      chClient,
+		geoEnricher:   geoEnricher,
+		streamName:    cfg.Redis.StreamName,
+		consumerGroup: cfg.Analytics.ConsumerGroup,
+		consumerName:  cfg.Analytics.ConsumerName,
+		batchSize:     cfg.Analytics.BatchSize,
+		pollInterval:  cfg.Analytics.PollInterval,
+		blockTime:     cfg.Analytics.BlockTime,
+	}
+
+	go worker.Start(ctx)
+
+	<-sigChan
+	log.Info("Shutting down pipeline worker...")
+	cancel()
+	time.Sleep(2 * time.Second)
+	log.Info("Pipeline worker stopped")
+}
+
+type PipelineWorker struct {
+	redisClient   *redis.Client
+	chClient      *clickhouse.Client
+	geoEnricher   *enrichment.GeoIPEnricher
+	streamName    string
+	consumerGroup string
+	consumerName  string
+	batchSize     int
+	pollInterval  time.Duration
+	blockTime     time.Duration
+}
+
+func (w *PipelineWorker) Start(ctx context.Context) {
+	log.Info("Pipeline worker started (batch size: %d)", w.batchSize)
+
+	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()
 
-	processPipeline(ctx, cassandraClient, dbManager, geoEnricher)
-
-	for range ticker.C {
-		processPipeline(ctx, cassandraClient, dbManager, geoEnricher)
-	}
-}
-
-func processPipeline(ctx context.Context, cassClient *cassandra.CassandraClient, dbManager *database.DBManager, geoEnricher *enrichment.GeoIPEnricher) {
-	log.Info("starting pipeline run")
-	startTime := time.Now()
-
-	lastHour := time.Now().Add(-1 * time.Hour)
-	query := `
-  		SELECT short_code, clicked_at, click_id, ip_address, user_agent, referer
-  		FROM recent_clicks
-  		WHERE clicked_at > ?
-  		ALLOW FILTERING
-  	`
-
-	iter := cassClient.GetSession().Query(query, lastHour).Iter()
-
-	var clicks []ClickData
-	var click ClickData
-
-	for iter.Scan(
-		&click.ShortCode,
-		&click.ClickedAt,
-		&click.ClickID,
-		&click.IPAddress,
-		&click.UserAgent,
-		&click.Referer,
-	) {
-		clicks = append(clicks, click)
-		click = ClickData{}
-	}
-
-	if err := iter.Close(); err != nil {
-		log.Error("Failed to read from Cassandra : %v", err)
-		return
-	}
-
-	if len(clicks) == 0 {
-		log.Info("No new clicks to process")
-		return
-	}
-
-	log.Info("Processing %d clicks", len(clicks))
-
-	enrichedClicks := enrichClicks(clicks, geoEnricher)
-
-	if err := writeToTimescaleDB(ctx, dbManager, enrichedClicks); err != nil {
-		log.Error("Failed to write to TimescaleDB: %v", err)
-		return
-	}
-
-	if err := updateClickCounters(ctx, dbManager, enrichedClicks); err != nil {
-		log.Error("Failed to update counters: %v", err)
-		return
-	}
-
-	duration := time.Since(startTime)
-	log.Info("Pipeline run completed: %d clicks processed in %v", len(clicks), duration)
-}
-
-type ClickData struct {
-	ShortCode string
-	ClickedAt time.Time
-	ClickID   gocql.UUID
-	IPAddress string
-	UserAgent string
-	Referer   string
-}
-
-type EnrichedClick struct {
-	ClickData
-	Country    string
-	City       string
-	Browser    string
-	OS         string
-	DeviceType string
-}
-
-func enrichClicks(clicks []ClickData, geoEnricher *enrichment.GeoIPEnricher) []EnrichedClick {
-	enriched := make([]EnrichedClick, len(clicks))
-
-	for i, click := range clicks {
-		geoInfo := geoEnricher.Lookup(click.IPAddress)
-		uaInfo := enrichment.ParseUserAgent(click.UserAgent)
-
-		enriched[i] = EnrichedClick{
-			ClickData:  click,
-			Country:    geoInfo.Country,
-			City:       geoInfo.City,
-			Browser:    uaInfo.Browser,
-			OS:         uaInfo.OS,
-			DeviceType: uaInfo.DeviceType,
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := w.processBatch(ctx); err != nil {
+				log.Error("Failed to process batch: %v", err)
+			}
 		}
 	}
-
-	return enriched
 }
 
-func writeToTimescaleDB(ctx context.Context, dbManager *database.DBManager, clicks []EnrichedClick) error {
-	conn := dbManager.Primary()
+func (w *PipelineWorker) processBatch(ctx context.Context) error {
+	streams, err := w.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    w.consumerGroup,
+		Consumer: w.consumerName,
+		Streams:  []string{w.streamName, ">"},
+		Count:    int64(w.batchSize),
+		Block:    w.blockTime,
+	}).Result()
 
-	query := `
-		INSERT INTO clicks (
-			short_code, clicked_at, click_id, ip_address, user_agent, referer,
-			country, city, device_type, browser, os
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		return fmt.Errorf("failed to read from stream: %w", err)
+	}
 
-	for _, click := range clicks {
-		_, err := conn.Exec(ctx, query,
-			click.ShortCode,
-			click.ClickedAt,
-			click.ClickID.String(),
-			click.IPAddress,
-			click.UserAgent,
-			click.Referer,
-			click.Country,
-			click.City,
-			click.DeviceType,
-			click.Browser,
-			click.OS,
-		)
+	if len(streams) == 0 || len(streams[0].Messages) == 0 {
+		return nil
+	}
+
+	messages := streams[0].Messages
+	log.Info("Processing batch of %d events", len(messages))
+
+	var clickEvents []clickhouse.ClickEvent
+	var messageIDs []string
+
+	for _, msg := range messages {
+		event, err := w.enrichEvent(msg.Values)
 		if err != nil {
-			return fmt.Errorf("failed to insert click: %w", err)
+			log.Error("Failed to enrich event %s: %v", msg.ID, err)
+			continue
+		}
+		clickEvents = append(clickEvents, *event)
+		messageIDs = append(messageIDs, msg.ID)
+	}
+
+	if len(clickEvents) == 0 {
+		return nil
+	}
+
+	if err := w.chClient.InsertClickEvents(ctx, clickEvents); err != nil {
+		return fmt.Errorf("failed to insert events to ClickHouse: %w", err)
+	}
+
+	for _, msgID := range messageIDs {
+		if err := w.redisClient.XAck(ctx, w.streamName, w.consumerGroup, msgID).Err(); err != nil {
+			log.Error("Failed to ack message %s: %v", msgID, err)
 		}
 	}
 
+	log.Info("Successfully processed %d events", len(clickEvents))
 	return nil
 }
 
-func updateClickCounters(ctx context.Context, dbManager *database.DBManager, clicks []EnrichedClick) error {
-	conn := dbManager.Primary()
+func (w *PipelineWorker) enrichEvent(fields map[string]interface{}) (*clickhouse.ClickEvent, error) {
+	shortCode, _ := fields["short_code"].(string)
+	timestamp, _ := fields["timestamp"].(string)
+	ipAddress, _ := fields["ip"].(string)
+	userAgent, _ := fields["user_agent"].(string)
+	originalURL, _ := fields["original_url"].(string)
+	referer, _ := fields["referer"].(string)
+	queryParams, _ := fields["query_params"].(string)
 
-	clickCounts := make(map[string]int)
-	for _, click := range clicks {
-		clickCounts[click.ShortCode]++
+	var clickedAt time.Time
+	if timestamp != "" {
+		timestampInt, _ := parseTimestamp(timestamp)
+		clickedAt = time.Unix(timestampInt, 0)
+	} else {
+		clickedAt = time.Now()
 	}
 
-	query := `UPDATE urls SET clicks = clicks + $1 WHERE short_code = $2`
+	geoInfo := w.geoEnricher.Lookup(ipAddress)
+	uaInfo := enrichment.ParseUserAgent(userAgent)
 
-	for shortCode, count := range clickCounts {
-		_, err := conn.Exec(ctx, query, count, shortCode)
-		if err != nil {
-			log.Warn("Failed to update counter for %s: %v", shortCode, err)
-		}
+	var isMobile, isTablet, isDesktop, isBot uint8
+	switch uaInfo.DeviceType {
+	case "mobile":
+		isMobile = 1
+	case "tablet":
+		isTablet = 1
+	case "bot":
+		isBot = 1
+	default:
+		isDesktop = 1
 	}
 
-	return nil
+	return &clickhouse.ClickEvent{
+		EventID:     uuid.New().String(),
+		ShortCode:   shortCode,
+		OriginalURL: originalURL,
+		ClickedAt:   clickedAt,
+		IPAddress:   ipAddress,
+		Country:     geoInfo.Country,
+		CountryCode: geoInfo.Country,
+		City:        geoInfo.City,
+		UserAgent:   userAgent,
+		Browser:     uaInfo.Browser,
+		OS:          uaInfo.OS,
+		DeviceType:  uaInfo.DeviceType,
+		IsMobile:    isMobile,
+		IsTablet:    isTablet,
+		IsDesktop:   isDesktop,
+		IsBot:       isBot,
+		Referer:     referer,
+		QueryParams: queryParams,
+	}, nil
+}
+
+func parseTimestamp(s string) (int64, error) {
+	var ts int64
+	if err := json.Unmarshal([]byte(s), &ts); err != nil {
+		return 0, err
+	}
+	return ts, nil
 }

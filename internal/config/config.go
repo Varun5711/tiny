@@ -4,21 +4,20 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Database  DatabaseConfig
-	Redis     RedisConfig
-	Services  ServicesConfig
-	Analytics AnalyticsConfig
-	Snowflake SnowflakeConfig
-	Cache     CacheConfig
-	RateLimit RateLimitConfig
-	Cassandra CassandraConfig
+	Database   DatabaseConfig
+	Redis      RedisConfig
+	ClickHouse ClickHouseConfig
+	Services   ServicesConfig
+	Analytics  AnalyticsConfig
+	Snowflake  SnowflakeConfig
+	Cache      CacheConfig
+	RateLimit  RateLimitConfig
 }
 
 type DatabaseConfig struct {
@@ -37,10 +36,12 @@ type RedisConfig struct {
 	StreamName string
 }
 
-type CassandraConfig struct {
-	Hosts       []string
-	Keyspace    string
-	Consistency string
+type ClickHouseConfig struct {
+	Addr     string
+	Database string
+	Username string
+	Password string
+	MaxConns int
 }
 
 type ServicesConfig struct {
@@ -103,17 +104,19 @@ func Load() (*Config, error) {
 			RedirectServicePort: getEnv("REDIRECT_SERVICE_PORT", "8081"),
 			BaseURL:             getEnv("BASE_URL", "http://localhost:8081"),
 		},
-		Cassandra: CassandraConfig{
-			Hosts:       strings.Split(getEnv("CASSANDRA_HOSTS", "localhost"), ","),
-			Keyspace:    getEnv("CASSANDRA_KEYSPACE", "urlshortener"),
-			Consistency: getEnv("CASSANDRA_CONSISTENCY", "ONE"),
-		},
 		Analytics: AnalyticsConfig{
 			ConsumerGroup: getEnv("ANALYTICS_CONSUMER_GROUP", "analytics-group"),
 			ConsumerName:  getEnv("ANALYTICS_CONSUMER_NAME", "worker-1"),
 			BatchSize:     getEnvAsInt("ANALYTICS_BATCH_SIZE", 100),
 			PollInterval:  getEnvAsDuration("ANALYTICS_POLL_INTERVAL", time.Second),
 			BlockTime:     getEnvAsDuration("ANALYTICS_BLOCK_TIME", 5*time.Second),
+		},
+		ClickHouse: ClickHouseConfig{
+			Addr:     getEnv("CLICKHOUSE_ADDR", "localhost:9000"),
+			Database: getEnv("CLICKHOUSE_DATABASE", "analytics"),
+			Username: getEnv("CLICKHOUSE_USERNAME", "clickhouse"),
+			Password: getEnv("CLICKHOUSE_PASSWORD", ""),
+			MaxConns: getEnvAsInt("CLICKHOUSE_MAX_CONNS", 10),
 		},
 		Cache: CacheConfig{
 			L1Capacity: getEnvAsInt("CACHE_L1_CAPACITY", 10000),

@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/Varun5711/shorternit/internal/cache"
-	"github.com/Varun5711/shorternit/internal/cassandra"
 	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/events"
 	"github.com/Varun5711/shorternit/internal/handlers"
@@ -31,16 +30,6 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	cassandraClient, err := cassandra.NewCassandraClient(cassandra.Config{
-		Hosts:       cfg.Cassandra.Hosts,
-		Keyspace:    cfg.Cassandra.Keyspace,
-		Consistency: cfg.Cassandra.Consistency,
-	})
-	if err != nil {
-		log.Fatal("Failed to connect to cassandra %v", err)
-	}
-	defer cassandraClient.Close()
-
 	urlCache := cache.NewMultiTierCache(
 		cfg.Cache.L1Capacity,
 		redisClient.GetClient(),
@@ -49,7 +38,7 @@ func main() {
 
 	clickProducer := events.NewClickProducer(redisClient.GetClient(), cfg.Redis.StreamName)
 
-	redirectHandler, err := handlers.NewRedirectHandler(cfg.Services.URLServiceAddr, clickProducer, urlCache, cassandraClient)
+	redirectHandler, err := handlers.NewRedirectHandler(cfg.Services.URLServiceAddr, clickProducer, urlCache)
 	if err != nil {
 		log.Fatal("Failed to connect to url-service: %v", err)
 	}

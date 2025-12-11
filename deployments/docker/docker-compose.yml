@@ -150,22 +150,31 @@ services:
       timeout: 5s
       retries: 5
 
-  cassandra:
-    image: cassandra:4.1
-    container_name: cassandra
-    ports:
-      - "9042:9042" # CQL port
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: url-shortener-clickhouse
     environment:
-      - CASSANDRA_CLUSTER_NAME=urlshortener
-      - CASSANDRA_DC=dc1
-      - CASSANDRA_RACK=rack1
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse_password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native interface
     volumes:
-      - cassandra_data:/var/lib/cassandra
+      - clickhouse-data:/var/lib/clickhouse
+      - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init-clickhouse.sql
+    networks:
+      - url-shortener-network
     healthcheck:
-      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
       retries: 5
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
 volumes:
   postgres-primary-data:
@@ -173,7 +182,7 @@ volumes:
   postgres-replica2-data:
   postgres-replica3-data:
   redis-data:
-  cassandra_data:
+  clickhouse-data:
 
 networks:
   url-shortener-network:

@@ -1,5 +1,5 @@
 procs:
-  postgres:
+  docker:
     shell: "cd deployments/docker && docker-compose up"
 
   url-service:
