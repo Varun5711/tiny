@@ -297,7 +297,7 @@ CREATE TABLE custom_domains (
 ```
 
 #### TimescaleDB Extension on PostgreSQL (Time-Series Analytics)
-**Why not Cassandra?** Cost - we'll use PostgreSQL with TimescaleDB extension (free) for time-series data
+PostgreSQL with TimescaleDB extension provides efficient time-series data storage
 ```sql
 -- Enable TimescaleDB extension
 CREATE EXTENSION IF NOT EXISTS timescaledb;
@@ -863,10 +863,10 @@ func (g *GRPCManager) AnalyticsClient() pb.AnalyticsServiceClient {
 
 #### Analytics Service
 **Responsibilities:**
-- Ingest click events from Kafka
+- Ingest click events from RabbitMQ
 - Enrich with geolocation (MaxMind GeoIP2)
 - Parse User-Agent (ua-parser)
-- Write to Cassandra + ClickHouse
+- Write to ClickHouse for OLAP analytics
 
 **Data Pipeline:**
 ```
@@ -986,17 +986,12 @@ spec:
    - Partition old data by time range
    - Archive to S3 after 90 days
 
-2. **Cassandra:**
-   - 6+ node cluster (RF=3)
-   - Multi-datacenter replication
-   - Compaction strategy: TimeWindowCompactionStrategy
-
-3. **Redis:**
+2. **Redis:**
    - Redis Cluster (6 nodes, 3 primaries)
    - Sentinel for HA
    - Eviction policy: allkeys-lru for cache keys
 
-4. **ClickHouse:**
+3. **ClickHouse:**
    - Distributed tables across 3+ shards
    - 2x replication per shard
    - Materialized views for pre-aggregation
@@ -1052,13 +1047,12 @@ spec:
 #### Multi-Region Deployment
 - **Active-Active:** Deploy to 3+ regions (US, EU, ASIA)
 - **GeoDNS routing:** Route to nearest region
-- **Cross-region replication:** Cassandra DC replication
+- **Cross-region replication:** ClickHouse distributed replication
 
 #### Backup Strategy
 - PostgreSQL: Continuous WAL archiving to S3
-- Cassandra: Daily snapshots to object storage
 - Redis: RDB snapshots every 5 minutes
-- ClickHouse: Incremental backups
+- ClickHouse: Incremental backups to S3
 
 #### Disaster Recovery
 - RTO: 15 minutes
@@ -1641,11 +1635,12 @@ A **production-grade URL shortener** that demonstrates enterprise system design 
 - Testing & observability best practices
 
 ### Key Decisions Made
-1. **PostgreSQL + TimescaleDB** instead of Cassandra (cost savings, still shows time-series understanding)
-2. **RabbitMQ** instead of Kafka (lighter weight, sufficient for scale)
-3. **Single VPS deployment** with K8s manifests ready (shows scaling understanding)
-4. **All microservices architecture** maintained (demonstrates system design knowledge)
-5. **Full observability stack** included (Prometheus, Grafana)
+1. **ClickHouse for OLAP analytics** (industry-standard, columnar storage, blazing-fast aggregations)
+2. **TimescaleDB for time-series** (PostgreSQL extension, continuous aggregates, familiar SQL)
+3. **RabbitMQ** instead of Kafka (lighter weight, sufficient for scale)
+4. **Single VPS deployment** with K8s manifests ready (shows scaling understanding)
+5. **All microservices architecture** maintained (demonstrates system design knowledge)
+6. **Full observability stack** included (Prometheus, Grafana)
 
 ### Time Commitment
 - **8-10 weeks** for full implementation (working part-time)

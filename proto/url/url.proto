@@ -31,6 +31,10 @@ service URLService {
   // IncrementClicks updates the click count
   // This is called internally (not exposed via REST)
   rpc IncrementClicks(IncrementClicksRequest) returns (IncrementClicksResponse);
+
+  // CreateCustomURL creates a URL with a custom alias
+  // Like: @Post('/urls/custom') in NestJS
+  rpc CreateCustomURL(CreateCustomURLRequest) returns (CreateCustomURLResponse);
 }
 
 // ==================== CREATE URL ====================
@@ -42,13 +46,13 @@ message CreateURLRequest {
   string long_url = 1;
 
   // Optional: User ID (for authenticated requests)
-  // int64 user_id = 2;  // Uncomment when we add auth
+  string user_id = 2;
 
   // Optional: Custom alias (like bit.ly/my-custom-name)
   // string custom_alias = 3;  // Uncomment for custom URLs feature
 
-  // Optional: Expiration timestamp (Unix seconds)
-  // int64 expires_at = 4;  // Uncomment for expiring links
+  // Optional: Expiration timestamp (Unix seconds, 0 = never expires)
+  int64 expires_at = 4;
 }
 
 message CreateURLResponse {
@@ -64,8 +68,11 @@ message CreateURLResponse {
   // When this URL was created (Unix timestamp in seconds)
   int64 created_at = 4;
 
-  // The raw Snowflake ID (useful for debugging)
-  int64 id = 5;
+  // When this URL expires (Unix timestamp in seconds, 0 = never expires)
+  int64 expires_at = 5;
+
+  // QR code as base64 data URI (e.g., "data:image/png;base64,...")
+  string qr_code = 6;
 }
 
 // ==================== GET URL ====================
@@ -93,7 +100,7 @@ message ListURLsRequest {
   int32 offset = 2;
 
   // Optional: Filter by user ID
-  // int64 user_id = 3;  // Uncomment when we add auth
+  string user_id = 3;
 }
 
 message ListURLsResponse {
@@ -128,35 +135,68 @@ message IncrementClicksResponse {
   int64 clicks = 1;
 }
 
+// ==================== CREATE CUSTOM URL ====================
+
+message CreateCustomURLRequest {
+  // The custom alias/slug (e.g., "my-brand")
+  string alias = 1;
+
+  // The original long URL to shorten
+  string long_url = 2;
+
+  // Optional: Expiration timestamp (Unix seconds, 0 = never expires)
+  int64 expires_at = 3;
+
+  // Optional: User ID (for authenticated requests)
+  string user_id = 4;
+}
+
+message CreateCustomURLResponse {
+  // The custom alias (same as request)
+  string short_code = 1;
+
+  // The full short URL (e.g., "http://short.ly/my-brand")
+  string short_url = 2;
+
+  // The original long URL (echo back for confirmation)
+  string long_url = 3;
+
+  // When this URL was created (Unix timestamp in seconds)
+  int64 created_at = 4;
+
+  // When this URL expires (Unix timestamp in seconds, 0 = never expires)
+  int64 expires_at = 5;
+
+  // QR code as base64 data URI (e.g., "data:image/png;base64,...")
+  string qr_code = 6;
+}
+
 // ==================== SHARED MESSAGES ====================
 
 // URL represents a shortened URL
 // This is like your DTO/Entity in NestJS
 message URL {
-  // The Snowflake ID (64-bit integer)
-  int64 id = 1;
-
   // The short code (Base62 encoded ID)
-  string short_code = 2;
+  string short_code = 1;
 
   // The original long URL
-  string long_url = 3;
+  string long_url = 2;
 
   // Number of times this URL has been clicked
-  int64 clicks = 4;
+  int64 clicks = 3;
 
   // When this URL was created (Unix timestamp in seconds)
-  int64 created_at = 5;
+  int64 created_at = 4;
 
   // When this URL was last updated
-  int64 updated_at = 6;
+  int64 updated_at = 5;
 
   // Whether this URL is active (soft delete)
-  bool is_active = 7;
+  bool is_active = 6;
 
-  // Optional: When this URL expires
-  // int64 expires_at = 8;
+  // Optional: When this URL expires (Unix timestamp, 0 = never expires)
+  int64 expires_at = 7;
 
-  // Optional: User who created this
-  // int64 user_id = 9;
+  // The full short URL (e.g., "http://short.ly/abc123")
+  string short_url = 8;
 }

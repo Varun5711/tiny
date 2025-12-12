@@ -12,7 +12,6 @@ type ClickProducer struct {
 	streamName string
 }
 
-// NewClickProducer creates a new click event producer
 func NewClickProducer(client *redis.Client, streamName string) *ClickProducer {
 	return &ClickProducer{
 		client:     client,
@@ -31,6 +30,15 @@ func (p *ClickProducer) Publish(ctx context.Context, event *ClickEvent) error {
 	}
 	if event.UserAgent != "" {
 		fields["user_agent"] = event.UserAgent
+	}
+	if event.OriginalURL != "" {
+		fields["original_url"] = event.OriginalURL
+	}
+	if event.Referer != "" {
+		fields["referer"] = event.Referer
+	}
+	if event.QueryParams != "" {
+		fields["query_params"] = event.QueryParams
 	}
 
 	result := p.client.XAdd(ctx, &redis.XAddArgs{
@@ -59,6 +67,15 @@ func (p *ClickProducer) PublishBatch(ctx context.Context, events []*ClickEvent) 
 		}
 		if event.UserAgent != "" {
 			fields["user_agent"] = event.UserAgent
+		}
+		if event.OriginalURL != "" {
+			fields["original_url"] = event.OriginalURL
+		}
+		if event.Referer != "" {
+			fields["referer"] = event.Referer
+		}
+		if event.QueryParams != "" {
+			fields["query_params"] = event.QueryParams
 		}
 
 		pipe.XAdd(ctx, &redis.XAddArgs{

@@ -7,6 +7,7 @@ CREATE TABLE urls (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE,
+    qr_code TEXT,
     CONSTRAINT long_url_not_empty CHECK (length(long_url) > 0),
     CONSTRAINT clicks_non_negative CHECK (clicks >= 0)
 );
@@ -47,6 +48,7 @@ COMMENT ON TABLE urls IS 'Stores short code to long URL mappings';
 COMMENT ON COLUMN urls.short_code IS 'Base62-encoded Snowflake ID (unique, short identifier)';
 COMMENT ON COLUMN urls.clicks IS 'Total click count (incremented on each redirect)';
 COMMENT ON COLUMN urls.expires_at IS 'Optional expiration timestamp (NULL = never expires)';
+COMMENT ON COLUMN urls.qr_code IS 'Base64-encoded PNG QR code image (data URI format)';
 
 COMMENT ON TABLE url_analytics IS 'Detailed click analytics (optional, can be disabled for high-traffic URLs)';
 COMMENT ON INDEX idx_urls_created_at IS 'Optimizes queries for recently created URLs';

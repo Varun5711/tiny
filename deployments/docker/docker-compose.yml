@@ -1,8 +1,8 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres-primary:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-primary
     environment:
       POSTGRES_USER: urlshortener
@@ -15,6 +15,7 @@ services:
       -c max_wal_senders=10
       -c max_replication_slots=10
       -c hot_standby_feedback=on
+      -c shared_preload_libraries=timescaledb
     ports:
       - "5432:5432"
     volumes:
@@ -29,7 +30,7 @@ services:
       retries: 5
 
   postgres-replica1:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-replica1
     environment:
       POSTGRES_USER: urlshortener
@@ -64,7 +65,7 @@ services:
         condition: service_healthy
 
   postgres-replica2:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-replica2
     environment:
       POSTGRES_USER: urlshortener
@@ -99,7 +100,7 @@ services:
         condition: service_healthy
 
   postgres-replica3:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: url-shortener-db-replica3
     environment:
       POSTGRES_USER: urlshortener
@@ -149,12 +150,39 @@ services:
       timeout: 5s
       retries: 5
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: url-shortener-clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse_password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native interface
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init-clickhouse.sql
+    networks:
+      - url-shortener-network
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
 volumes:
   postgres-primary-data:
   postgres-replica1-data:
   postgres-replica2-data:
   postgres-replica3-data:
   redis-data:
+  clickhouse-data:
 
 networks:
   url-shortener-network:

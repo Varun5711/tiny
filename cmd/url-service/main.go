@@ -63,7 +63,7 @@ func main() {
 	defer dbManager.Close()
 
 	store := storage.NewPostgresStorage(dbManager)
-	urlService := service.NewURLService(store, idGen, urlCache)
+	urlService := service.NewURLService(store, idGen, urlCache, redisClient.GetClient(), cfg.Services.BaseURL, cfg.Services.DefaultURLTTL)
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterURLServiceServer(grpcServer, urlService)

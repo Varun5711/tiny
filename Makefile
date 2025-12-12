@@ -30,6 +30,10 @@ build:
 	@go build -o bin/api-gateway cmd/api-gateway/main.go
 	@go build -o bin/redirect-service cmd/redirect-service/main.go
 	@go build -o bin/analytics-worker cmd/analytics-worker/main.go
+	@go build -o bin/pipeline-worker cmd/pipeline-worker/main.go
+	@go build -o bin/cleanup-worker cmd/cleanup-worker/main.go
+	@go build -o bin/user-service cmd/user-service/main.go
+	@go build -o bin/tui cmd/tui/main.go
 	@echo "All services built in bin/"
 
 test:

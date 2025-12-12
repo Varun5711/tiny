@@ -1,5 +1,5 @@
 procs:
-  postgres:
+  docker:
     shell: "cd deployments/docker && docker-compose up"
 
   url-service:
@@ -13,3 +13,9 @@ procs:
 
   analytics-worker:
     shell: "go run cmd/analytics-worker/main.go"
+
+  pipeline-worker:
+    shell: "go run cmd/pipeline-worker/main.go"
+
+  user-service:
+    shell: "go run cmd/user-service/main.go"

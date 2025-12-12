@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Varun5711/shorternit/internal/database"
@@ -25,14 +27,17 @@ func (s *PostgresStorage) Save(url *models.URL) error {
 	defer cancel()
 
 	query := `
-		INSERT INTO urls (short_code, long_url, clicks, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO urls (short_code, long_url, clicks, expires_at, qr_code, user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	_, err := s.db.Write().Exec(ctx, query,
 		url.ShortCode,
 		url.LongURL,
 		url.Clicks,
+		url.ExpiresAt,
+		url.QRCode,
+		url.UserID,
 		url.CreatedAt,
 		time.Now(),
 	)
@@ -49,9 +54,10 @@ func (s *PostgresStorage) GetByShortCode(shortCode string) (*models.URL, error) 
 	defer cancel()
 
 	query := `
-		SELECT short_code, long_url, clicks, created_at
+		SELECT short_code, long_url, clicks, created_at, expires_at, COALESCE(qr_code, '')
 		FROM urls
 		WHERE short_code = $1
+		AND (expires_at IS NULL OR expires_at > NOW())
 	`
 
 	var url models.URL
@@ -60,6 +66,8 @@ func (s *PostgresStorage) GetByShortCode(shortCode string) (*models.URL, error) 
 		&url.LongURL,
 		&url.Clicks,
 		&url.CreatedAt,
+		&url.ExpiresAt,
+		&url.QRCode,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -101,8 +109,9 @@ func (s *PostgresStorage) List() ([]*models.URL, error) {
 	defer cancel()
 
 	query := `
-		SELECT short_code, long_url, clicks, created_at
+		SELECT short_code, long_url, clicks, created_at, expires_at, COALESCE(qr_code, ''), COALESCE(user_id, '')
 		FROM urls
+		WHERE (expires_at IS NULL OR expires_at > NOW())
 		ORDER BY created_at DESC
 	`
 
@@ -120,6 +129,9 @@ func (s *PostgresStorage) List() ([]*models.URL, error) {
 			&url.LongURL,
 			&url.Clicks,
 			&url.CreatedAt,
+			&url.ExpiresAt,
+			&url.QRCode,
+			&url.UserID,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
@@ -132,4 +144,52 @@ func (s *PostgresStorage) List() ([]*models.URL, error) {
 	}
 
 	return urls, nil
+}
+
+func (p *PostgresStorage) AliasExists(ctx context.Context, alias string) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM urls WHERE short_code = $1)`
+	err := p.db.Read().QueryRow(ctx, query, alias).Scan(&exists)
+	return exists, err
+}
+
+func (p *PostgresStorage) AliasExistsPrimary(ctx context.Context, alias string) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM urls WHERE short_code = $1)`
+	err := p.db.Write().QueryRow(ctx, query, alias).Scan(&exists)
+	return exists, err
+}
+
+func (p *PostgresStorage) CreateCustomURL(ctx context.Context, alias, longURL string, expiresAt *time.Time, qrCode, userID string) error {
+	query := `
+		INSERT INTO urls (short_code, long_url, expires_at, qr_code, user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+		RETURNING created_at
+	`
+
+	var createdAt time.Time
+	err := p.db.Write().QueryRow(ctx, query, alias, longURL, expiresAt, qrCode, userID).Scan(&createdAt)
+
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") {
+			return errors.New("alias already taken")
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (p *PostgresStorage) DeleteExpiredURLs(ctx context.Context) (int64, error) {
+	query := `
+		DELETE FROM urls
+		WHERE expires_at IS NOT NULL AND expires_at < NOW()
+	`
+
+	cmdTag, err := p.db.Write().Exec(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete expired URLs: %w", err)
+	}
+
+	return cmdTag.RowsAffected(), nil
 }

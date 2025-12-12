@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Varun5711/shorternit/internal/cache"
@@ -76,14 +78,41 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 	}
 
 	clickEvent := &events.ClickEvent{
-		ShortCode: shortCode,
-		Timestamp: time.Now().Unix(),
-		IP:        r.RemoteAddr,
-		UserAgent: r.UserAgent(),
+		ShortCode:   shortCode,
+		Timestamp:   time.Now().Unix(),
+		IP:          getClientIP(r),
+		UserAgent:   r.UserAgent(),
+		OriginalURL: longURL,
+		Referer:     r.Header.Get("Referer"),
+		QueryParams: r.URL.RawQuery,
 	}
 	if err := h.clickProducer.Publish(ctx, clickEvent); err != nil {
 		h.log.Warn("Failed to publish click event: %v", err)
 	}
 
 	http.Redirect(w, r, longURL, http.StatusFound)
+}
+
+func getClientIP(r *http.Request) string {
+	forwarded := r.Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		ips := strings.Split(forwarded, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	realIP := r.Header.Get("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+
+	if ip == "::1" {
+		return "127.0.0.1"
+	}
+
+	return ip
 }

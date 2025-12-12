@@ -10,12 +10,14 @@ import (
 )
 
 type Config struct {
-	Database  DatabaseConfig
-	Redis     RedisConfig
-	Services  ServicesConfig
-	Analytics AnalyticsConfig
-	Snowflake SnowflakeConfig
-	Cache     CacheConfig
+	Database   DatabaseConfig
+	Redis      RedisConfig
+	ClickHouse ClickHouseConfig
+	Services   ServicesConfig
+	Analytics  AnalyticsConfig
+	Snowflake  SnowflakeConfig
+	Cache      CacheConfig
+	RateLimit  RateLimitConfig
 }
 
 type DatabaseConfig struct {
@@ -34,11 +36,20 @@ type RedisConfig struct {
 	StreamName string
 }
 
+type ClickHouseConfig struct {
+	Addr     string
+	Database string
+	Username string
+	Password string
+	MaxConns int
+}
+
 type ServicesConfig struct {
 	URLServiceAddr      string
 	APIGatewayPort      string
 	RedirectServicePort string
 	BaseURL             string
+	DefaultURLTTL       time.Duration
 }
 
 type AnalyticsConfig struct {
@@ -57,6 +68,11 @@ type SnowflakeConfig struct {
 type CacheConfig struct {
 	L1Capacity int
 	L2TTL      time.Duration
+}
+
+type RateLimitConfig struct {
+	Requests int
+	Window   time.Duration
 }
 
 func Load() (*Config, error) {
@@ -88,6 +104,7 @@ func Load() (*Config, error) {
 			APIGatewayPort:      getEnv("API_GATEWAY_PORT", "8080"),
 			RedirectServicePort: getEnv("REDIRECT_SERVICE_PORT", "8081"),
 			BaseURL:             getEnv("BASE_URL", "http://localhost:8081"),
+			DefaultURLTTL:       getEnvAsDuration("DEFAULT_URL_TTL", 3*24*time.Hour),
 		},
 		Analytics: AnalyticsConfig{
 			ConsumerGroup: getEnv("ANALYTICS_CONSUMER_GROUP", "analytics-group"),
@@ -96,9 +113,20 @@ func Load() (*Config, error) {
 			PollInterval:  getEnvAsDuration("ANALYTICS_POLL_INTERVAL", time.Second),
 			BlockTime:     getEnvAsDuration("ANALYTICS_BLOCK_TIME", 5*time.Second),
 		},
+		ClickHouse: ClickHouseConfig{
+			Addr:     getEnv("CLICKHOUSE_ADDR", "localhost:9000"),
+			Database: getEnv("CLICKHOUSE_DATABASE", "analytics"),
+			Username: getEnv("CLICKHOUSE_USERNAME", "clickhouse"),
+			Password: getEnv("CLICKHOUSE_PASSWORD", ""),
+			MaxConns: getEnvAsInt("CLICKHOUSE_MAX_CONNS", 10),
+		},
 		Cache: CacheConfig{
 			L1Capacity: getEnvAsInt("CACHE_L1_CAPACITY", 10000),
 			L2TTL:      getEnvAsDuration("CACHE_L2_TTL", time.Hour),
+		},
+		RateLimit: RateLimitConfig{
+			Requests: getEnvAsInt("RATE_LIMIT_REQUESTS", 100),
+			Window:   getEnvAsDuration("RATE_LIMIT_WINDOW", time.Minute),
 		},
 		Snowflake: SnowflakeConfig{
 			DatacenterID: int64(getEnvAsInt("SNOWFLAKE_DATACENTER_ID", 1)),

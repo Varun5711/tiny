@@ -29,11 +29,11 @@ var (
 	}
 
 	levelColors = map[Level]string{
-		DEBUG: "\033[36m", // Cyan
-		INFO:  "\033[32m", // Green
-		WARN:  "\033[33m", // Yellow
-		ERROR: "\033[31m", // Red
-		FATAL: "\033[35m", // Magenta
+		DEBUG: "\033[36m",
+		INFO:  "\033[32m",
+		WARN:  "\033[33m",
+		ERROR: "\033[31m",
+		FATAL: "\033[35m",
 	}
 
 	reset = "\033[0m"
@@ -84,13 +84,11 @@ func (l *Logger) log(level Level, format string, args ...interface{}) {
 
 	var buf strings.Builder
 
-	// Timestamp
 	if l.showTime {
 		buf.WriteString(time.Now().Format("15:04:05"))
 		buf.WriteString(" ")
 	}
 
-	// Level with color
 	if l.useColors {
 		buf.WriteString(levelColors[level])
 	}
@@ -100,10 +98,9 @@ func (l *Logger) log(level Level, format string, args ...interface{}) {
 	}
 	buf.WriteString(" ")
 
-	// Service name
 	if l.service != "" {
 		if l.useColors {
-			buf.WriteString("\033[90m") // Gray
+			buf.WriteString("\033[90m")
 		}
 		buf.WriteString("[")
 		buf.WriteString(l.service)
@@ -114,11 +111,9 @@ func (l *Logger) log(level Level, format string, args ...interface{}) {
 		buf.WriteString(" ")
 	}
 
-	// Message
 	msg := fmt.Sprintf(format, args...)
 	buf.WriteString(msg)
 
-	// Write to output
 	fmt.Fprintln(l.out, buf.String())
 
 	if level == FATAL {
@@ -146,7 +141,6 @@ func (l *Logger) Fatal(format string, args ...interface{}) {
 	l.log(FATAL, format, args...)
 }
 
-// SetStdLog redirects standard log package to use this logger
 func (l *Logger) SetStdLog() {
 	log.SetOutput(&stdLogWriter{logger: l})
 	log.SetFlags(0)
