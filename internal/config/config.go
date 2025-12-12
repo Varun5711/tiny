@@ -49,6 +49,7 @@ type ServicesConfig struct {
 	APIGatewayPort      string
 	RedirectServicePort string
 	BaseURL             string
+	DefaultURLTTL       time.Duration
 }
 
 type AnalyticsConfig struct {
@@ -103,6 +104,7 @@ func Load() (*Config, error) {
 			APIGatewayPort:      getEnv("API_GATEWAY_PORT", "8080"),
 			RedirectServicePort: getEnv("REDIRECT_SERVICE_PORT", "8081"),
 			BaseURL:             getEnv("BASE_URL", "http://localhost:8081"),
+			DefaultURLTTL:       getEnvAsDuration("DEFAULT_URL_TTL", 3*24*time.Hour),
 		},
 		Analytics: AnalyticsConfig{
 			ConsumerGroup: getEnv("ANALYTICS_CONSUMER_GROUP", "analytics-group"),

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.0
 // - protoc             v6.33.0
-// source: proto/analytics/analytics.proto
+// source: analytics.proto
 
 package analytics
 
@@ -28,11 +28,6 @@ const (
 // AnalyticsServiceClient is the client API for AnalyticsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// AnalyticsService handles click tracking and statistics
-// This service is called:
-// 1. By Redirect Service when someone clicks a short URL (TrackClick)
-// 2. By API Gateway when user requests stats (GetStats)
 type AnalyticsServiceClient interface {
 	// TrackClick records a click event
 	// Called by Redirect Service (async via RabbitMQ in production)
@@ -97,11 +92,6 @@ func (c *analyticsServiceClient) GetGeoStats(ctx context.Context, in *GetGeoStat
 // AnalyticsServiceServer is the server API for AnalyticsService service.
 // All implementations must embed UnimplementedAnalyticsServiceServer
 // for forward compatibility.
-//
-// AnalyticsService handles click tracking and statistics
-// This service is called:
-// 1. By Redirect Service when someone clicks a short URL (TrackClick)
-// 2. By API Gateway when user requests stats (GetStats)
 type AnalyticsServiceServer interface {
 	// TrackClick records a click event
 	// Called by Redirect Service (async via RabbitMQ in production)
@@ -253,5 +243,5 @@ var AnalyticsService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/analytics/analytics.proto",
+	Metadata: "analytics.proto",
 }

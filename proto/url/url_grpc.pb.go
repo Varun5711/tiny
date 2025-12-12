@@ -24,17 +24,37 @@ const (
 	URLService_ListURLs_FullMethodName        = "/url.URLService/ListURLs"
 	URLService_DeleteURL_FullMethodName       = "/url.URLService/DeleteURL"
 	URLService_IncrementClicks_FullMethodName = "/url.URLService/IncrementClicks"
+	URLService_CreateCustomURL_FullMethodName = "/url.URLService/CreateCustomURL"
 )
 
 // URLServiceClient is the client API for URLService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// URLService is the gRPC service definition
+// This is like a NestJS Controller - it defines the API contract
+//
+// The API Gateway will be a CLIENT of this service (calls these methods)
+// The URL Service will be a SERVER of this service (implements these methods)
 type URLServiceClient interface {
+	// CreateURL generates a new short URL
+	// Like: @Post('/urls') in NestJS
 	CreateURL(ctx context.Context, in *CreateURLRequest, opts ...grpc.CallOption) (*CreateURLResponse, error)
+	// GetURL retrieves a URL by its short code
+	// Like: @Get('/urls/:code') in NestJS
 	GetURL(ctx context.Context, in *GetURLRequest, opts ...grpc.CallOption) (*GetURLResponse, error)
+	// ListURLs returns all URLs (paginated)
+	// Like: @Get('/urls') in NestJS
 	ListURLs(ctx context.Context, in *ListURLsRequest, opts ...grpc.CallOption) (*ListURLsResponse, error)
+	// DeleteURL soft-deletes a URL
+	// Like: @Delete('/urls/:code') in NestJS
 	DeleteURL(ctx context.Context, in *DeleteURLRequest, opts ...grpc.CallOption) (*DeleteURLResponse, error)
+	// IncrementClicks updates the click count
+	// This is called internally (not exposed via REST)
 	IncrementClicks(ctx context.Context, in *IncrementClicksRequest, opts ...grpc.CallOption) (*IncrementClicksResponse, error)
+	// CreateCustomURL creates a URL with a custom alias
+	// Like: @Post('/urls/custom') in NestJS
+	CreateCustomURL(ctx context.Context, in *CreateCustomURLRequest, opts ...grpc.CallOption) (*CreateCustomURLResponse, error)
 }
 
 type uRLServiceClient struct {
@@ -95,15 +115,44 @@ func (c *uRLServiceClient) IncrementClicks(ctx context.Context, in *IncrementCli
 	return out, nil
 }
 
+func (c *uRLServiceClient) CreateCustomURL(ctx context.Context, in *CreateCustomURLRequest, opts ...grpc.CallOption) (*CreateCustomURLResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCustomURLResponse)
+	err := c.cc.Invoke(ctx, URLService_CreateCustomURL_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // URLServiceServer is the server API for URLService service.
 // All implementations must embed UnimplementedURLServiceServer
 // for forward compatibility.
+//
+// URLService is the gRPC service definition
+// This is like a NestJS Controller - it defines the API contract
+//
+// The API Gateway will be a CLIENT of this service (calls these methods)
+// The URL Service will be a SERVER of this service (implements these methods)
 type URLServiceServer interface {
+	// CreateURL generates a new short URL
+	// Like: @Post('/urls') in NestJS
 	CreateURL(context.Context, *CreateURLRequest) (*CreateURLResponse, error)
+	// GetURL retrieves a URL by its short code
+	// Like: @Get('/urls/:code') in NestJS
 	GetURL(context.Context, *GetURLRequest) (*GetURLResponse, error)
+	// ListURLs returns all URLs (paginated)
+	// Like: @Get('/urls') in NestJS
 	ListURLs(context.Context, *ListURLsRequest) (*ListURLsResponse, error)
+	// DeleteURL soft-deletes a URL
+	// Like: @Delete('/urls/:code') in NestJS
 	DeleteURL(context.Context, *DeleteURLRequest) (*DeleteURLResponse, error)
+	// IncrementClicks updates the click count
+	// This is called internally (not exposed via REST)
 	IncrementClicks(context.Context, *IncrementClicksRequest) (*IncrementClicksResponse, error)
+	// CreateCustomURL creates a URL with a custom alias
+	// Like: @Post('/urls/custom') in NestJS
+	CreateCustomURL(context.Context, *CreateCustomURLRequest) (*CreateCustomURLResponse, error)
 	mustEmbedUnimplementedURLServiceServer()
 }
 
@@ -128,6 +177,9 @@ func (UnimplementedURLServiceServer) DeleteURL(context.Context, *DeleteURLReques
 }
 func (UnimplementedURLServiceServer) IncrementClicks(context.Context, *IncrementClicksRequest) (*IncrementClicksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method IncrementClicks not implemented")
+}
+func (UnimplementedURLServiceServer) CreateCustomURL(context.Context, *CreateCustomURLRequest) (*CreateCustomURLResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateCustomURL not implemented")
 }
 func (UnimplementedURLServiceServer) mustEmbedUnimplementedURLServiceServer() {}
 func (UnimplementedURLServiceServer) testEmbeddedByValue()                    {}
@@ -240,6 +292,24 @@ func _URLService_IncrementClicks_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _URLService_CreateCustomURL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCustomURLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(URLServiceServer).CreateCustomURL(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: URLService_CreateCustomURL_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(URLServiceServer).CreateCustomURL(ctx, req.(*CreateCustomURLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // URLService_ServiceDesc is the grpc.ServiceDesc for URLService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +336,10 @@ var URLService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "IncrementClicks",
 			Handler:    _URLService_IncrementClicks_Handler,
+		},
+		{
+			MethodName: "CreateCustomURL",
+			Handler:    _URLService_CreateCustomURL_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

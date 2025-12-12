@@ -1,8 +1,5 @@
--- Create analytics database
 CREATE DATABASE IF NOT EXISTS analytics;
 
--- Create click_events table with MergeTree engine
--- Optimized for analytical queries with partitioning by date
 CREATE TABLE IF NOT EXISTS analytics.click_events
 (
     event_id String,

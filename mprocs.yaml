@@ -16,3 +16,6 @@ procs:
 
   pipeline-worker:
     shell: "go run cmd/pipeline-worker/main.go"
+
+  user-service:
+    shell: "go run cmd/user-service/main.go"

@@ -40,18 +40,15 @@ func (c *LRUCache) Set(key string, value interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// If key exists, update it and move to front
 	if elem, found := c.cache[key]; found {
 		c.lruList.MoveToFront(elem)
 		elem.Value.(*entry).value = value
 		return
 	}
 
-	// Add new item to front (most recently used)
 	elem := c.lruList.PushFront(&entry{key, value})
 	c.cache[key] = elem
 
-	// If over capacity, remove least recently used (back of list)
 	if c.lruList.Len() > c.capacity {
 		c.evict()
 	}

@@ -200,25 +200,37 @@ func (w *PipelineWorker) enrichEvent(fields map[string]interface{}) (*clickhouse
 		isDesktop = 1
 	}
 
+	if uaInfo.IsTablet {
+		isTablet = 1
+	}
+
 	return &clickhouse.ClickEvent{
-		EventID:     uuid.New().String(),
-		ShortCode:   shortCode,
-		OriginalURL: originalURL,
-		ClickedAt:   clickedAt,
-		IPAddress:   ipAddress,
-		Country:     geoInfo.Country,
-		CountryCode: geoInfo.Country,
-		City:        geoInfo.City,
-		UserAgent:   userAgent,
-		Browser:     uaInfo.Browser,
-		OS:          uaInfo.OS,
-		DeviceType:  uaInfo.DeviceType,
-		IsMobile:    isMobile,
-		IsTablet:    isTablet,
-		IsDesktop:   isDesktop,
-		IsBot:       isBot,
-		Referer:     referer,
-		QueryParams: queryParams,
+		EventID:        uuid.New().String(),
+		ShortCode:      shortCode,
+		OriginalURL:    originalURL,
+		ClickedAt:      clickedAt,
+		IPAddress:      ipAddress,
+		Country:        geoInfo.Country,
+		CountryCode:    geoInfo.CountryCode,
+		Region:         geoInfo.Region,
+		City:           geoInfo.City,
+		Latitude:       geoInfo.Latitude,
+		Longitude:      geoInfo.Longitude,
+		Timezone:       geoInfo.Timezone,
+		UserAgent:      userAgent,
+		Browser:        uaInfo.Browser,
+		BrowserVersion: uaInfo.BrowserVersion,
+		OS:             uaInfo.OS,
+		OSVersion:      uaInfo.OSVersion,
+		DeviceType:     uaInfo.DeviceType,
+		DeviceBrand:    uaInfo.DeviceBrand,
+		DeviceModel:    uaInfo.DeviceModel,
+		IsMobile:       isMobile,
+		IsTablet:       isTablet,
+		IsDesktop:      isDesktop,
+		IsBot:          isBot,
+		Referer:        referer,
+		QueryParams:    queryParams,
 	}, nil
 }
 

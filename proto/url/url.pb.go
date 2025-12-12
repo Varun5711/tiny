@@ -22,8 +22,15 @@ const (
 )
 
 type CreateURLRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	LongUrl       string                 `protobuf:"bytes,1,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The original long URL to shorten
+	// Field numbers (1, 2, 3...) are used for binary encoding
+	// NEVER change these numbers after deployment!
+	LongUrl string `protobuf:"bytes,1,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
+	// Optional: User ID (for authenticated requests)
+	UserId string `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Optional: Expiration timestamp (Unix seconds, 0 = never expires)
+	ExpiresAt     int64 `protobuf:"varint,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,13 +72,34 @@ func (x *CreateURLRequest) GetLongUrl() string {
 	return ""
 }
 
+func (x *CreateURLRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *CreateURLRequest) GetExpiresAt() int64 {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return 0
+}
+
 type CreateURLResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ShortCode     string                 `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
-	ShortUrl      string                 `protobuf:"bytes,2,opt,name=short_url,json=shortUrl,proto3" json:"short_url,omitempty"`
-	LongUrl       string                 `protobuf:"bytes,3,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	Id            int64                  `protobuf:"varint,5,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The generated short code (e.g., "abc123")
+	ShortCode string `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	// The full short URL (e.g., "http://short.ly/abc123")
+	ShortUrl string `protobuf:"bytes,2,opt,name=short_url,json=shortUrl,proto3" json:"short_url,omitempty"`
+	// The original long URL (echo back for confirmation)
+	LongUrl string `protobuf:"bytes,3,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
+	// When this URL was created (Unix timestamp in seconds)
+	CreatedAt int64 `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// When this URL expires (Unix timestamp in seconds, 0 = never expires)
+	ExpiresAt int64 `protobuf:"varint,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// QR code as base64 data URI (e.g., "data:image/png;base64,...")
+	QrCode        string `protobuf:"bytes,6,opt,name=qr_code,json=qrCode,proto3" json:"qr_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -134,16 +162,24 @@ func (x *CreateURLResponse) GetCreatedAt() int64 {
 	return 0
 }
 
-func (x *CreateURLResponse) GetId() int64 {
+func (x *CreateURLResponse) GetExpiresAt() int64 {
 	if x != nil {
-		return x.Id
+		return x.ExpiresAt
 	}
 	return 0
 }
 
+func (x *CreateURLResponse) GetQrCode() string {
+	if x != nil {
+		return x.QrCode
+	}
+	return ""
+}
+
 type GetURLRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ShortCode     string                 `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The short code to lookup
+	ShortCode     string `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -186,9 +222,11 @@ func (x *GetURLRequest) GetShortCode() string {
 }
 
 type GetURLResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Url           *URL                   `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
-	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The URL object (will be nil if not found)
+	Url *URL `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	// Whether the URL was found
+	Found         bool `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -238,9 +276,13 @@ func (x *GetURLResponse) GetFound() bool {
 }
 
 type ListURLsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset        int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"` // int64 user_id = 3;  // Uncomment when we add auth
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Pagination: how many to return (default: 100, max: 1000)
+	Limit int32 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Pagination: offset for next page
+	Offset int32 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Optional: Filter by user ID
+	UserId        string `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -289,11 +331,21 @@ func (x *ListURLsRequest) GetOffset() int32 {
 	return 0
 }
 
+func (x *ListURLsRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
 type ListURLsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Urls          []*URL                 `protobuf:"bytes,1,rep,name=urls,proto3" json:"urls,omitempty"`
-	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	HasMore       bool                   `protobuf:"varint,3,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Array of URLs
+	Urls []*URL `protobuf:"bytes,1,rep,name=urls,proto3" json:"urls,omitempty"`
+	// Total count (for pagination)
+	Total int32 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	// Whether there are more results
+	HasMore       bool `protobuf:"varint,3,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -482,8 +534,9 @@ func (x *IncrementClicksRequest) GetShortCode() string {
 }
 
 type IncrementClicksResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Clicks        int64                  `protobuf:"varint,1,opt,name=clicks,proto3" json:"clicks,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The new click count
+	Clicks        int64 `protobuf:"varint,1,opt,name=clicks,proto3" json:"clicks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -525,22 +578,195 @@ func (x *IncrementClicksResponse) GetClicks() int64 {
 	return 0
 }
 
+type CreateCustomURLRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The custom alias/slug (e.g., "my-brand")
+	Alias string `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`
+	// The original long URL to shorten
+	LongUrl string `protobuf:"bytes,2,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
+	// Optional: Expiration timestamp (Unix seconds, 0 = never expires)
+	ExpiresAt int64 `protobuf:"varint,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// Optional: User ID (for authenticated requests)
+	UserId        string `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCustomURLRequest) Reset() {
+	*x = CreateCustomURLRequest{}
+	mi := &file_proto_url_url_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCustomURLRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCustomURLRequest) ProtoMessage() {}
+
+func (x *CreateCustomURLRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_url_url_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCustomURLRequest.ProtoReflect.Descriptor instead.
+func (*CreateCustomURLRequest) Descriptor() ([]byte, []int) {
+	return file_proto_url_url_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CreateCustomURLRequest) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+func (x *CreateCustomURLRequest) GetLongUrl() string {
+	if x != nil {
+		return x.LongUrl
+	}
+	return ""
+}
+
+func (x *CreateCustomURLRequest) GetExpiresAt() int64 {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return 0
+}
+
+func (x *CreateCustomURLRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type CreateCustomURLResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The custom alias (same as request)
+	ShortCode string `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	// The full short URL (e.g., "http://short.ly/my-brand")
+	ShortUrl string `protobuf:"bytes,2,opt,name=short_url,json=shortUrl,proto3" json:"short_url,omitempty"`
+	// The original long URL (echo back for confirmation)
+	LongUrl string `protobuf:"bytes,3,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
+	// When this URL was created (Unix timestamp in seconds)
+	CreatedAt int64 `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// When this URL expires (Unix timestamp in seconds, 0 = never expires)
+	ExpiresAt int64 `protobuf:"varint,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// QR code as base64 data URI (e.g., "data:image/png;base64,...")
+	QrCode        string `protobuf:"bytes,6,opt,name=qr_code,json=qrCode,proto3" json:"qr_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCustomURLResponse) Reset() {
+	*x = CreateCustomURLResponse{}
+	mi := &file_proto_url_url_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCustomURLResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCustomURLResponse) ProtoMessage() {}
+
+func (x *CreateCustomURLResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_url_url_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCustomURLResponse.ProtoReflect.Descriptor instead.
+func (*CreateCustomURLResponse) Descriptor() ([]byte, []int) {
+	return file_proto_url_url_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CreateCustomURLResponse) GetShortCode() string {
+	if x != nil {
+		return x.ShortCode
+	}
+	return ""
+}
+
+func (x *CreateCustomURLResponse) GetShortUrl() string {
+	if x != nil {
+		return x.ShortUrl
+	}
+	return ""
+}
+
+func (x *CreateCustomURLResponse) GetLongUrl() string {
+	if x != nil {
+		return x.LongUrl
+	}
+	return ""
+}
+
+func (x *CreateCustomURLResponse) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+func (x *CreateCustomURLResponse) GetExpiresAt() int64 {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return 0
+}
+
+func (x *CreateCustomURLResponse) GetQrCode() string {
+	if x != nil {
+		return x.QrCode
+	}
+	return ""
+}
+
+// URL represents a shortened URL
+// This is like your DTO/Entity in NestJS
 type URL struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	ShortCode     string                 `protobuf:"bytes,2,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
-	LongUrl       string                 `protobuf:"bytes,3,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
-	Clicks        int64                  `protobuf:"varint,4,opt,name=clicks,proto3" json:"clicks,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     int64                  `protobuf:"varint,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	IsActive      bool                   `protobuf:"varint,7,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The short code (Base62 encoded ID)
+	ShortCode string `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	// The original long URL
+	LongUrl string `protobuf:"bytes,2,opt,name=long_url,json=longUrl,proto3" json:"long_url,omitempty"`
+	// Number of times this URL has been clicked
+	Clicks int64 `protobuf:"varint,3,opt,name=clicks,proto3" json:"clicks,omitempty"`
+	// When this URL was created (Unix timestamp in seconds)
+	CreatedAt int64 `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// When this URL was last updated
+	UpdatedAt int64 `protobuf:"varint,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// Whether this URL is active (soft delete)
+	IsActive bool `protobuf:"varint,6,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
+	// Optional: When this URL expires (Unix timestamp, 0 = never expires)
+	ExpiresAt int64 `protobuf:"varint,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// The full short URL (e.g., "http://short.ly/abc123")
+	ShortUrl      string `protobuf:"bytes,8,opt,name=short_url,json=shortUrl,proto3" json:"short_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *URL) Reset() {
 	*x = URL{}
-	mi := &file_proto_url_url_proto_msgTypes[10]
+	mi := &file_proto_url_url_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +778,7 @@ func (x *URL) String() string {
 func (*URL) ProtoMessage() {}
 
 func (x *URL) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_url_url_proto_msgTypes[10]
+	mi := &file_proto_url_url_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,14 +791,7 @@ func (x *URL) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use URL.ProtoReflect.Descriptor instead.
 func (*URL) Descriptor() ([]byte, []int) {
-	return file_proto_url_url_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *URL) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
+	return file_proto_url_url_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *URL) GetShortCode() string {
@@ -617,30 +836,50 @@ func (x *URL) GetIsActive() bool {
 	return false
 }
 
+func (x *URL) GetExpiresAt() int64 {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return 0
+}
+
+func (x *URL) GetShortUrl() string {
+	if x != nil {
+		return x.ShortUrl
+	}
+	return ""
+}
+
 var File_proto_url_url_proto protoreflect.FileDescriptor
 
 const file_proto_url_url_proto_rawDesc = "" +
 	"\n" +
-	"\x13proto/url/url.proto\x12\x03url\"-\n" +
+	"\x13proto/url/url.proto\x12\x03url\"e\n" +
 	"\x10CreateURLRequest\x12\x19\n" +
-	"\blong_url\x18\x01 \x01(\tR\alongUrl\"\x99\x01\n" +
+	"\blong_url\x18\x01 \x01(\tR\alongUrl\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x04 \x01(\x03R\texpiresAt\"\xc1\x01\n" +
 	"\x11CreateURLResponse\x12\x1d\n" +
 	"\n" +
 	"short_code\x18\x01 \x01(\tR\tshortCode\x12\x1b\n" +
 	"\tshort_url\x18\x02 \x01(\tR\bshortUrl\x12\x19\n" +
 	"\blong_url\x18\x03 \x01(\tR\alongUrl\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x0e\n" +
-	"\x02id\x18\x05 \x01(\x03R\x02id\".\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\x03R\texpiresAt\x12\x17\n" +
+	"\aqr_code\x18\x06 \x01(\tR\x06qrCode\".\n" +
 	"\rGetURLRequest\x12\x1d\n" +
 	"\n" +
 	"short_code\x18\x01 \x01(\tR\tshortCode\"B\n" +
 	"\x0eGetURLResponse\x12\x1a\n" +
 	"\x03url\x18\x01 \x01(\v2\b.url.URLR\x03url\x12\x14\n" +
-	"\x05found\x18\x02 \x01(\bR\x05found\"?\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"X\n" +
 	"\x0fListURLsRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x02 \x01(\x05R\x06offset\"a\n" +
+	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\"a\n" +
 	"\x10ListURLsResponse\x12\x1c\n" +
 	"\x04urls\x18\x01 \x03(\v2\b.url.URLR\x04urls\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x19\n" +
@@ -654,25 +893,44 @@ const file_proto_url_url_proto_rawDesc = "" +
 	"\n" +
 	"short_code\x18\x01 \x01(\tR\tshortCode\"1\n" +
 	"\x17IncrementClicksResponse\x12\x16\n" +
-	"\x06clicks\x18\x01 \x01(\x03R\x06clicks\"\xc2\x01\n" +
-	"\x03URL\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1d\n" +
+	"\x06clicks\x18\x01 \x01(\x03R\x06clicks\"\x81\x01\n" +
+	"\x16CreateCustomURLRequest\x12\x14\n" +
+	"\x05alias\x18\x01 \x01(\tR\x05alias\x12\x19\n" +
+	"\blong_url\x18\x02 \x01(\tR\alongUrl\x12\x1d\n" +
 	"\n" +
-	"short_code\x18\x02 \x01(\tR\tshortCode\x12\x19\n" +
-	"\blong_url\x18\x03 \x01(\tR\alongUrl\x12\x16\n" +
-	"\x06clicks\x18\x04 \x01(\x03R\x06clicks\x12\x1d\n" +
+	"expires_at\x18\x03 \x01(\x03R\texpiresAt\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userId\"\xc7\x01\n" +
+	"\x17CreateCustomURLResponse\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"short_code\x18\x01 \x01(\tR\tshortCode\x12\x1b\n" +
+	"\tshort_url\x18\x02 \x01(\tR\bshortUrl\x12\x19\n" +
+	"\blong_url\x18\x03 \x01(\tR\alongUrl\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\x03R\tupdatedAt\x12\x1b\n" +
-	"\tis_active\x18\a \x01(\bR\bisActive2\xbe\x02\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\x03R\texpiresAt\x12\x17\n" +
+	"\aqr_code\x18\x06 \x01(\tR\x06qrCode\"\xee\x01\n" +
+	"\x03URL\x12\x1d\n" +
+	"\n" +
+	"short_code\x18\x01 \x01(\tR\tshortCode\x12\x19\n" +
+	"\blong_url\x18\x02 \x01(\tR\alongUrl\x12\x16\n" +
+	"\x06clicks\x18\x03 \x01(\x03R\x06clicks\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x05 \x01(\x03R\tupdatedAt\x12\x1b\n" +
+	"\tis_active\x18\x06 \x01(\bR\bisActive\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\a \x01(\x03R\texpiresAt\x12\x1b\n" +
+	"\tshort_url\x18\b \x01(\tR\bshortUrl2\x8c\x03\n" +
 	"\n" +
 	"URLService\x12:\n" +
 	"\tCreateURL\x12\x15.url.CreateURLRequest\x1a\x16.url.CreateURLResponse\x121\n" +
 	"\x06GetURL\x12\x12.url.GetURLRequest\x1a\x13.url.GetURLResponse\x127\n" +
 	"\bListURLs\x12\x14.url.ListURLsRequest\x1a\x15.url.ListURLsResponse\x12:\n" +
 	"\tDeleteURL\x12\x15.url.DeleteURLRequest\x1a\x16.url.DeleteURLResponse\x12L\n" +
-	"\x0fIncrementClicks\x12\x1b.url.IncrementClicksRequest\x1a\x1c.url.IncrementClicksResponseB+Z)github.com/Varun5711/shorternit/proto/urlb\x06proto3"
+	"\x0fIncrementClicks\x12\x1b.url.IncrementClicksRequest\x1a\x1c.url.IncrementClicksResponse\x12L\n" +
+	"\x0fCreateCustomURL\x12\x1b.url.CreateCustomURLRequest\x1a\x1c.url.CreateCustomURLResponseB+Z)github.com/Varun5711/shorternit/proto/urlb\x06proto3"
 
 var (
 	file_proto_url_url_proto_rawDescOnce sync.Once
@@ -686,7 +944,7 @@ func file_proto_url_url_proto_rawDescGZIP() []byte {
 	return file_proto_url_url_proto_rawDescData
 }
 
-var file_proto_url_url_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_url_url_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_proto_url_url_proto_goTypes = []any{
 	(*CreateURLRequest)(nil),        // 0: url.CreateURLRequest
 	(*CreateURLResponse)(nil),       // 1: url.CreateURLResponse
@@ -698,23 +956,27 @@ var file_proto_url_url_proto_goTypes = []any{
 	(*DeleteURLResponse)(nil),       // 7: url.DeleteURLResponse
 	(*IncrementClicksRequest)(nil),  // 8: url.IncrementClicksRequest
 	(*IncrementClicksResponse)(nil), // 9: url.IncrementClicksResponse
-	(*URL)(nil),                     // 10: url.URL
+	(*CreateCustomURLRequest)(nil),  // 10: url.CreateCustomURLRequest
+	(*CreateCustomURLResponse)(nil), // 11: url.CreateCustomURLResponse
+	(*URL)(nil),                     // 12: url.URL
 }
 var file_proto_url_url_proto_depIdxs = []int32{
-	10, // 0: url.GetURLResponse.url:type_name -> url.URL
-	10, // 1: url.ListURLsResponse.urls:type_name -> url.URL
+	12, // 0: url.GetURLResponse.url:type_name -> url.URL
+	12, // 1: url.ListURLsResponse.urls:type_name -> url.URL
 	0,  // 2: url.URLService.CreateURL:input_type -> url.CreateURLRequest
 	2,  // 3: url.URLService.GetURL:input_type -> url.GetURLRequest
 	4,  // 4: url.URLService.ListURLs:input_type -> url.ListURLsRequest
 	6,  // 5: url.URLService.DeleteURL:input_type -> url.DeleteURLRequest
 	8,  // 6: url.URLService.IncrementClicks:input_type -> url.IncrementClicksRequest
-	1,  // 7: url.URLService.CreateURL:output_type -> url.CreateURLResponse
-	3,  // 8: url.URLService.GetURL:output_type -> url.GetURLResponse
-	5,  // 9: url.URLService.ListURLs:output_type -> url.ListURLsResponse
-	7,  // 10: url.URLService.DeleteURL:output_type -> url.DeleteURLResponse
-	9,  // 11: url.URLService.IncrementClicks:output_type -> url.IncrementClicksResponse
-	7,  // [7:12] is the sub-list for method output_type
-	2,  // [2:7] is the sub-list for method input_type
+	10, // 7: url.URLService.CreateCustomURL:input_type -> url.CreateCustomURLRequest
+	1,  // 8: url.URLService.CreateURL:output_type -> url.CreateURLResponse
+	3,  // 9: url.URLService.GetURL:output_type -> url.GetURLResponse
+	5,  // 10: url.URLService.ListURLs:output_type -> url.ListURLsResponse
+	7,  // 11: url.URLService.DeleteURL:output_type -> url.DeleteURLResponse
+	9,  // 12: url.URLService.IncrementClicks:output_type -> url.IncrementClicksResponse
+	11, // 13: url.URLService.CreateCustomURL:output_type -> url.CreateCustomURLResponse
+	8,  // [8:14] is the sub-list for method output_type
+	2,  // [2:8] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -731,7 +993,7 @@ func file_proto_url_url_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_url_url_proto_rawDesc), len(file_proto_url_url_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

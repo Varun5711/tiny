@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v6.33.0
-// source: proto/analytics/analytics.proto
+// source: analytics.proto
 
 package analytics
 
@@ -39,7 +39,7 @@ type TrackClickRequest struct {
 
 func (x *TrackClickRequest) Reset() {
 	*x = TrackClickRequest{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[0]
+	mi := &file_analytics_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -51,7 +51,7 @@ func (x *TrackClickRequest) String() string {
 func (*TrackClickRequest) ProtoMessage() {}
 
 func (x *TrackClickRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[0]
+	mi := &file_analytics_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -64,7 +64,7 @@ func (x *TrackClickRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrackClickRequest.ProtoReflect.Descriptor instead.
 func (*TrackClickRequest) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{0}
+	return file_analytics_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *TrackClickRequest) GetShortCode() string {
@@ -114,7 +114,7 @@ type TrackClickResponse struct {
 
 func (x *TrackClickResponse) Reset() {
 	*x = TrackClickResponse{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[1]
+	mi := &file_analytics_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -126,7 +126,7 @@ func (x *TrackClickResponse) String() string {
 func (*TrackClickResponse) ProtoMessage() {}
 
 func (x *TrackClickResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[1]
+	mi := &file_analytics_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -139,7 +139,7 @@ func (x *TrackClickResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrackClickResponse.ProtoReflect.Descriptor instead.
 func (*TrackClickResponse) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{1}
+	return file_analytics_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *TrackClickResponse) GetSuccess() bool {
@@ -169,7 +169,7 @@ type GetStatsRequest struct {
 
 func (x *GetStatsRequest) Reset() {
 	*x = GetStatsRequest{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[2]
+	mi := &file_analytics_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -181,7 +181,7 @@ func (x *GetStatsRequest) String() string {
 func (*GetStatsRequest) ProtoMessage() {}
 
 func (x *GetStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[2]
+	mi := &file_analytics_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -194,7 +194,7 @@ func (x *GetStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetStatsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{2}
+	return file_analytics_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetStatsRequest) GetShortCode() string {
@@ -219,26 +219,20 @@ func (x *GetStatsRequest) GetEndTime() int64 {
 }
 
 type GetStatsResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The short code
-	ShortCode string `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
-	// Total clicks (all time)
-	TotalClicks int64 `protobuf:"varint,2,opt,name=total_clicks,json=totalClicks,proto3" json:"total_clicks,omitempty"`
-	// Unique visitors (by IP)
-	UniqueVisitors int64 `protobuf:"varint,3,opt,name=unique_visitors,json=uniqueVisitors,proto3" json:"unique_visitors,omitempty"`
-	// Top countries (sorted by count)
-	Countries []*CountryStat `protobuf:"bytes,4,rep,name=countries,proto3" json:"countries,omitempty"`
-	// Top referrers
-	Referrers []*RefererStat `protobuf:"bytes,5,rep,name=referrers,proto3" json:"referrers,omitempty"`
-	// Device breakdown
-	DeviceStats   *DeviceStats `protobuf:"bytes,6,opt,name=device_stats,json=deviceStats,proto3" json:"device_stats,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ShortCode      string                 `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	TotalClicks    int64                  `protobuf:"varint,2,opt,name=total_clicks,json=totalClicks,proto3" json:"total_clicks,omitempty"`
+	UniqueVisitors int64                  `protobuf:"varint,3,opt,name=unique_visitors,json=uniqueVisitors,proto3" json:"unique_visitors,omitempty"`
+	Countries      []*CountryStat         `protobuf:"bytes,4,rep,name=countries,proto3" json:"countries,omitempty"`
+	Referrers      []*RefererStat         `protobuf:"bytes,5,rep,name=referrers,proto3" json:"referrers,omitempty"`
+	DeviceStats    *DeviceStats           `protobuf:"bytes,6,opt,name=device_stats,json=deviceStats,proto3" json:"device_stats,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetStatsResponse) Reset() {
 	*x = GetStatsResponse{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[3]
+	mi := &file_analytics_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -250,7 +244,7 @@ func (x *GetStatsResponse) String() string {
 func (*GetStatsResponse) ProtoMessage() {}
 
 func (x *GetStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[3]
+	mi := &file_analytics_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -263,7 +257,7 @@ func (x *GetStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatsResponse.ProtoReflect.Descriptor instead.
 func (*GetStatsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{3}
+	return file_analytics_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetStatsResponse) GetShortCode() string {
@@ -310,17 +304,17 @@ func (x *GetStatsResponse) GetDeviceStats() *DeviceStats {
 
 type CountryStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CountryCode   string                 `protobuf:"bytes,1,opt,name=country_code,json=countryCode,proto3" json:"country_code,omitempty"` // "US", "UK", etc.
-	CountryName   string                 `protobuf:"bytes,2,opt,name=country_name,json=countryName,proto3" json:"country_name,omitempty"` // "United States"
+	CountryCode   string                 `protobuf:"bytes,1,opt,name=country_code,json=countryCode,proto3" json:"country_code,omitempty"`
+	CountryName   string                 `protobuf:"bytes,2,opt,name=country_name,json=countryName,proto3" json:"country_name,omitempty"`
 	ClickCount    int64                  `protobuf:"varint,3,opt,name=click_count,json=clickCount,proto3" json:"click_count,omitempty"`
-	Percentage    float32                `protobuf:"fixed32,4,opt,name=percentage,proto3" json:"percentage,omitempty"` // e.g., 45.5%
+	Percentage    float32                `protobuf:"fixed32,4,opt,name=percentage,proto3" json:"percentage,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CountryStat) Reset() {
 	*x = CountryStat{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[4]
+	mi := &file_analytics_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -332,7 +326,7 @@ func (x *CountryStat) String() string {
 func (*CountryStat) ProtoMessage() {}
 
 func (x *CountryStat) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[4]
+	mi := &file_analytics_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -345,7 +339,7 @@ func (x *CountryStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountryStat.ProtoReflect.Descriptor instead.
 func (*CountryStat) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{4}
+	return file_analytics_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CountryStat) GetCountryCode() string {
@@ -378,7 +372,7 @@ func (x *CountryStat) GetPercentage() float32 {
 
 type RefererStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Referer       string                 `protobuf:"bytes,1,opt,name=referer,proto3" json:"referer,omitempty"` // "https://google.com"
+	Referer       string                 `protobuf:"bytes,1,opt,name=referer,proto3" json:"referer,omitempty"`
 	ClickCount    int64                  `protobuf:"varint,2,opt,name=click_count,json=clickCount,proto3" json:"click_count,omitempty"`
 	Percentage    float32                `protobuf:"fixed32,3,opt,name=percentage,proto3" json:"percentage,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -387,7 +381,7 @@ type RefererStat struct {
 
 func (x *RefererStat) Reset() {
 	*x = RefererStat{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[5]
+	mi := &file_analytics_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -399,7 +393,7 @@ func (x *RefererStat) String() string {
 func (*RefererStat) ProtoMessage() {}
 
 func (x *RefererStat) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[5]
+	mi := &file_analytics_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -412,7 +406,7 @@ func (x *RefererStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefererStat.ProtoReflect.Descriptor instead.
 func (*RefererStat) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{5}
+	return file_analytics_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RefererStat) GetReferer() string {
@@ -448,7 +442,7 @@ type DeviceStats struct {
 
 func (x *DeviceStats) Reset() {
 	*x = DeviceStats{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[6]
+	mi := &file_analytics_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -460,7 +454,7 @@ func (x *DeviceStats) String() string {
 func (*DeviceStats) ProtoMessage() {}
 
 func (x *DeviceStats) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[6]
+	mi := &file_analytics_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -473,7 +467,7 @@ func (x *DeviceStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceStats.ProtoReflect.Descriptor instead.
 func (*DeviceStats) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{6}
+	return file_analytics_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DeviceStats) GetMobile() int64 {
@@ -505,20 +499,18 @@ func (x *DeviceStats) GetOther() int64 {
 }
 
 type GetTimeSeriesRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ShortCode string                 `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
-	// Time range
-	StartTime int64 `protobuf:"varint,2,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
-	EndTime   int64 `protobuf:"varint,3,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	// Granularity: "hour", "day", "week", "month"
-	Granularity   string `protobuf:"bytes,4,opt,name=granularity,proto3" json:"granularity,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShortCode     string                 `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	StartTime     int64                  `protobuf:"varint,2,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	EndTime       int64                  `protobuf:"varint,3,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	Granularity   string                 `protobuf:"bytes,4,opt,name=granularity,proto3" json:"granularity,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetTimeSeriesRequest) Reset() {
 	*x = GetTimeSeriesRequest{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[7]
+	mi := &file_analytics_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -530,7 +522,7 @@ func (x *GetTimeSeriesRequest) String() string {
 func (*GetTimeSeriesRequest) ProtoMessage() {}
 
 func (x *GetTimeSeriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[7]
+	mi := &file_analytics_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -543,7 +535,7 @@ func (x *GetTimeSeriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTimeSeriesRequest.ProtoReflect.Descriptor instead.
 func (*GetTimeSeriesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{7}
+	return file_analytics_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetTimeSeriesRequest) GetShortCode() string {
@@ -575,16 +567,15 @@ func (x *GetTimeSeriesRequest) GetGranularity() string {
 }
 
 type GetTimeSeriesResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Array of data points
-	Points        []*TimeSeriesPoint `protobuf:"bytes,1,rep,name=points,proto3" json:"points,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Points        []*TimeSeriesPoint     `protobuf:"bytes,1,rep,name=points,proto3" json:"points,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetTimeSeriesResponse) Reset() {
 	*x = GetTimeSeriesResponse{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[8]
+	mi := &file_analytics_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -596,7 +587,7 @@ func (x *GetTimeSeriesResponse) String() string {
 func (*GetTimeSeriesResponse) ProtoMessage() {}
 
 func (x *GetTimeSeriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[8]
+	mi := &file_analytics_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -609,7 +600,7 @@ func (x *GetTimeSeriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTimeSeriesResponse.ProtoReflect.Descriptor instead.
 func (*GetTimeSeriesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{8}
+	return file_analytics_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetTimeSeriesResponse) GetPoints() []*TimeSeriesPoint {
@@ -620,20 +611,17 @@ func (x *GetTimeSeriesResponse) GetPoints() []*TimeSeriesPoint {
 }
 
 type TimeSeriesPoint struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Timestamp for this data point
-	Timestamp int64 `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	// Number of clicks in this time bucket
-	Clicks int64 `protobuf:"varint,2,opt,name=clicks,proto3" json:"clicks,omitempty"`
-	// Number of unique visitors in this time bucket
-	UniqueVisitors int64 `protobuf:"varint,3,opt,name=unique_visitors,json=uniqueVisitors,proto3" json:"unique_visitors,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Timestamp      int64                  `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Clicks         int64                  `protobuf:"varint,2,opt,name=clicks,proto3" json:"clicks,omitempty"`
+	UniqueVisitors int64                  `protobuf:"varint,3,opt,name=unique_visitors,json=uniqueVisitors,proto3" json:"unique_visitors,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *TimeSeriesPoint) Reset() {
 	*x = TimeSeriesPoint{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[9]
+	mi := &file_analytics_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -645,7 +633,7 @@ func (x *TimeSeriesPoint) String() string {
 func (*TimeSeriesPoint) ProtoMessage() {}
 
 func (x *TimeSeriesPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[9]
+	mi := &file_analytics_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -658,7 +646,7 @@ func (x *TimeSeriesPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimeSeriesPoint.ProtoReflect.Descriptor instead.
 func (*TimeSeriesPoint) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{9}
+	return file_analytics_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TimeSeriesPoint) GetTimestamp() int64 {
@@ -683,17 +671,16 @@ func (x *TimeSeriesPoint) GetUniqueVisitors() int64 {
 }
 
 type GetGeoStatsRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ShortCode string                 `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
-	// Optional: limit results
-	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShortCode     string                 `protobuf:"bytes,1,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetGeoStatsRequest) Reset() {
 	*x = GetGeoStatsRequest{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[10]
+	mi := &file_analytics_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +692,7 @@ func (x *GetGeoStatsRequest) String() string {
 func (*GetGeoStatsRequest) ProtoMessage() {}
 
 func (x *GetGeoStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[10]
+	mi := &file_analytics_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +705,7 @@ func (x *GetGeoStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGeoStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetGeoStatsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{10}
+	return file_analytics_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetGeoStatsRequest) GetShortCode() string {
@@ -736,18 +723,16 @@ func (x *GetGeoStatsRequest) GetLimit() int32 {
 }
 
 type GetGeoStatsResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Clicks by country
-	Countries []*CountryStat `protobuf:"bytes,1,rep,name=countries,proto3" json:"countries,omitempty"`
-	// Clicks by city (top cities)
-	Cities        []*CityStat `protobuf:"bytes,2,rep,name=cities,proto3" json:"cities,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Countries     []*CountryStat         `protobuf:"bytes,1,rep,name=countries,proto3" json:"countries,omitempty"`
+	Cities        []*CityStat            `protobuf:"bytes,2,rep,name=cities,proto3" json:"cities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetGeoStatsResponse) Reset() {
 	*x = GetGeoStatsResponse{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[11]
+	mi := &file_analytics_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -759,7 +744,7 @@ func (x *GetGeoStatsResponse) String() string {
 func (*GetGeoStatsResponse) ProtoMessage() {}
 
 func (x *GetGeoStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[11]
+	mi := &file_analytics_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -772,7 +757,7 @@ func (x *GetGeoStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGeoStatsResponse.ProtoReflect.Descriptor instead.
 func (*GetGeoStatsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{11}
+	return file_analytics_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetGeoStatsResponse) GetCountries() []*CountryStat {
@@ -801,7 +786,7 @@ type CityStat struct {
 
 func (x *CityStat) Reset() {
 	*x = CityStat{}
-	mi := &file_proto_analytics_analytics_proto_msgTypes[12]
+	mi := &file_analytics_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -813,7 +798,7 @@ func (x *CityStat) String() string {
 func (*CityStat) ProtoMessage() {}
 
 func (x *CityStat) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_analytics_analytics_proto_msgTypes[12]
+	mi := &file_analytics_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -826,7 +811,7 @@ func (x *CityStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CityStat.ProtoReflect.Descriptor instead.
 func (*CityStat) Descriptor() ([]byte, []int) {
-	return file_proto_analytics_analytics_proto_rawDescGZIP(), []int{12}
+	return file_analytics_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CityStat) GetCity() string {
@@ -857,11 +842,11 @@ func (x *CityStat) GetPercentage() float32 {
 	return 0
 }
 
-var File_proto_analytics_analytics_proto protoreflect.FileDescriptor
+var File_analytics_proto protoreflect.FileDescriptor
 
-const file_proto_analytics_analytics_proto_rawDesc = "" +
+const file_analytics_proto_rawDesc = "" +
 	"\n" +
-	"\x1fproto/analytics/analytics.proto\x12\tanalytics\"\xa8\x01\n" +
+	"\x0fanalytics.proto\x12\tanalytics\"\xa8\x01\n" +
 	"\x11TrackClickRequest\x12\x1d\n" +
 	"\n" +
 	"short_code\x18\x01 \x01(\tR\tshortCode\x12\x1d\n" +
@@ -944,19 +929,19 @@ const file_proto_analytics_analytics_proto_rawDesc = "" +
 	"\vGetGeoStats\x12\x1d.analytics.GetGeoStatsRequest\x1a\x1e.analytics.GetGeoStatsResponseB1Z/github.com/Varun5711/shorternit/proto/analyticsb\x06proto3"
 
 var (
-	file_proto_analytics_analytics_proto_rawDescOnce sync.Once
-	file_proto_analytics_analytics_proto_rawDescData []byte
+	file_analytics_proto_rawDescOnce sync.Once
+	file_analytics_proto_rawDescData []byte
 )
 
-func file_proto_analytics_analytics_proto_rawDescGZIP() []byte {
-	file_proto_analytics_analytics_proto_rawDescOnce.Do(func() {
-		file_proto_analytics_analytics_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_analytics_analytics_proto_rawDesc), len(file_proto_analytics_analytics_proto_rawDesc)))
+func file_analytics_proto_rawDescGZIP() []byte {
+	file_analytics_proto_rawDescOnce.Do(func() {
+		file_analytics_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_analytics_proto_rawDesc), len(file_analytics_proto_rawDesc)))
 	})
-	return file_proto_analytics_analytics_proto_rawDescData
+	return file_analytics_proto_rawDescData
 }
 
-var file_proto_analytics_analytics_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
-var file_proto_analytics_analytics_proto_goTypes = []any{
+var file_analytics_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_analytics_proto_goTypes = []any{
 	(*TrackClickRequest)(nil),     // 0: analytics.TrackClickRequest
 	(*TrackClickResponse)(nil),    // 1: analytics.TrackClickResponse
 	(*GetStatsRequest)(nil),       // 2: analytics.GetStatsRequest
@@ -971,7 +956,7 @@ var file_proto_analytics_analytics_proto_goTypes = []any{
 	(*GetGeoStatsResponse)(nil),   // 11: analytics.GetGeoStatsResponse
 	(*CityStat)(nil),              // 12: analytics.CityStat
 }
-var file_proto_analytics_analytics_proto_depIdxs = []int32{
+var file_analytics_proto_depIdxs = []int32{
 	4,  // 0: analytics.GetStatsResponse.countries:type_name -> analytics.CountryStat
 	5,  // 1: analytics.GetStatsResponse.referrers:type_name -> analytics.RefererStat
 	6,  // 2: analytics.GetStatsResponse.device_stats:type_name -> analytics.DeviceStats
@@ -993,26 +978,26 @@ var file_proto_analytics_analytics_proto_depIdxs = []int32{
 	0,  // [0:6] is the sub-list for field type_name
 }
 
-func init() { file_proto_analytics_analytics_proto_init() }
-func file_proto_analytics_analytics_proto_init() {
-	if File_proto_analytics_analytics_proto != nil {
+func init() { file_analytics_proto_init() }
+func file_analytics_proto_init() {
+	if File_analytics_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_analytics_analytics_proto_rawDesc), len(file_proto_analytics_analytics_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_analytics_proto_rawDesc), len(file_analytics_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_analytics_analytics_proto_goTypes,
-		DependencyIndexes: file_proto_analytics_analytics_proto_depIdxs,
-		MessageInfos:      file_proto_analytics_analytics_proto_msgTypes,
+		GoTypes:           file_analytics_proto_goTypes,
+		DependencyIndexes: file_analytics_proto_depIdxs,
+		MessageInfos:      file_analytics_proto_msgTypes,
 	}.Build()
-	File_proto_analytics_analytics_proto = out.File
-	file_proto_analytics_analytics_proto_goTypes = nil
-	file_proto_analytics_analytics_proto_depIdxs = nil
+	File_analytics_proto = out.File
+	file_analytics_proto_goTypes = nil
+	file_analytics_proto_depIdxs = nil
 }

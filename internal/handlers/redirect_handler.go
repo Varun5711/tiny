@@ -77,12 +77,14 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Publish click event to message queue for async processing
 	clickEvent := &events.ClickEvent{
-		ShortCode: shortCode,
-		Timestamp: time.Now().Unix(),
-		IP:        r.RemoteAddr,
-		UserAgent: r.UserAgent(),
+		ShortCode:   shortCode,
+		Timestamp:   time.Now().Unix(),
+		IP:          getClientIP(r),
+		UserAgent:   r.UserAgent(),
+		OriginalURL: longURL,
+		Referer:     r.Header.Get("Referer"),
+		QueryParams: r.URL.RawQuery,
 	}
 	if err := h.clickProducer.Publish(ctx, clickEvent); err != nil {
 		h.log.Warn("Failed to publish click event: %v", err)

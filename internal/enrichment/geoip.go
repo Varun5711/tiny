@@ -5,8 +5,13 @@ import (
 )
 
 type GeoInfo struct {
-	Country string
-	City    string
+	Country     string
+	CountryCode string
+	Region      string
+	City        string
+	Latitude    float64
+	Longitude   float64
+	Timezone    string
 }
 
 type GeoIPEnricher struct {
@@ -19,16 +24,37 @@ func NewGeoIPEnricher() *GeoIPEnricher {
 func (g *GeoIPEnricher) Lookup(ipAddress string) *GeoInfo {
 	ip := net.ParseIP(ipAddress)
 	if ip == nil {
-		return &GeoInfo{Country: "XX", City: "Unknown"}
+		return &GeoInfo{
+			Country:     "Unknown",
+			CountryCode: "XX",
+			Region:      "Unknown",
+			City:        "Unknown",
+			Latitude:    0.0,
+			Longitude:   0.0,
+			Timezone:    "UTC",
+		}
 	}
 
 	if ip.IsLoopback() || ip.IsPrivate() {
-		return &GeoInfo{Country: "XX", City: "Local"}
+		return &GeoInfo{
+			Country:     "Local",
+			CountryCode: "XX",
+			Region:      "Local",
+			City:        "Local",
+			Latitude:    0.0,
+			Longitude:   0.0,
+			Timezone:    "UTC",
+		}
 	}
 
 	return &GeoInfo{
-		Country: "US",
-		City:    "Unknown",
+		Country:     "Unknown",
+		CountryCode: "XX",
+		Region:      "Unknown",
+		City:        "Unknown",
+		Latitude:    0.0,
+		Longitude:   0.0,
+		Timezone:    "UTC",
 	}
 }
 
