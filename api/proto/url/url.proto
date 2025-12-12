@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package url;
+option go_package = "github.com/Varun5711/shorternit/proto/url";
+
+service URLService {
+  rpc CreateURL(CreateURLRequest) returns (CreateURLResponse);
+  rpc GetURL(GetURLRequest) returns (GetURLResponse);
+  rpc ListURLs(ListURLsRequest) returns (ListURLsResponse);
+  rpc DeleteURL(DeleteURLRequest) returns (DeleteURLResponse);
+  rpc IncrementClicks(IncrementClicksRequest) returns (IncrementClicksResponse);
+  rpc CreateCustomURL(CreateCustomURLRequest) returns (CreateCustomURLResponse);
+}
+
+message CreateURLRequest {
+  string long_url = 1;
+  string user_id = 2;
+  int64 expires_at = 4;
+}
+
+message CreateURLResponse {
+  string short_code = 1;
+  string short_url = 2;
+  string long_url = 3;
+  int64 created_at = 4;
+  int64 expires_at = 5;
+  string qr_code = 6;
+}
+
+message GetURLRequest {
+  string short_code = 1;
+}
+
+message GetURLResponse {
+  URL url = 1;
+  bool found = 2;
+}
+
+message ListURLsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  string user_id = 3;
+}
+
+message ListURLsResponse {
+  repeated URL urls = 1;
+  int32 total = 2;
+  bool has_more = 3;
+}
+
+message DeleteURLRequest {
+  string short_code = 1;
+}
+
+message DeleteURLResponse {
+  bool success = 1;
+}
+
+message IncrementClicksRequest {
+  string short_code = 1;
+}
+
+message IncrementClicksResponse {
+  int64 clicks = 1;
+}
+
+message CreateCustomURLRequest {
+  string alias = 1;
+  string long_url = 2;
+  int64 expires_at = 3;
+  string user_id = 4;
+}
+
+message CreateCustomURLResponse {
+  string short_code = 1;
+  string short_url = 2;
+  string long_url = 3;
+  int64 created_at = 4;
+  int64 expires_at = 5;
+  string qr_code = 6;
+}
+
+message URL {
+  string short_code = 1;
+  string long_url = 2;
+  int64 clicks = 3;
+  int64 created_at = 4;
+  int64 updated_at = 5;
+  bool is_active = 6;
+  int64 expires_at = 7;
+  string short_url = 8;
+}

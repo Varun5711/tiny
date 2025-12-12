@@ -1,6 +1,6 @@
 procs:
   docker:
-    shell: "cd deployments/docker && docker-compose up"
+    shell: "cd deployments/docker-compose && docker-compose up"
 
   url-service:
     shell: "go run cmd/url-service/main.go"
