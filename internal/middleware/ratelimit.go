@@ -10,10 +10,10 @@ import (
 )
 
 type RateLimiter struct {
-	redis       *redis.Client
-	limit       int
-	window      time.Duration
-	keyPrefix   string
+	redis     *redis.Client
+	limit     int
+	window    time.Duration
+	keyPrefix string
 }
 
 func NewRateLimiter(redisClient *redis.Client, limit int, window time.Duration) *RateLimiter {

@@ -43,9 +43,9 @@ type CreateCustomURLResponse struct {
 }
 
 type ListURLsResponse struct {
-	URLs      []URL  `json:"urls"`
-	Total     int32  `json:"total,omitempty"`
-	HasMore   bool   `json:"has_more,omitempty"`
+	URLs    []URL `json:"urls"`
+	Total   int32 `json:"total,omitempty"`
+	HasMore bool  `json:"has_more,omitempty"`
 }
 
 type ErrorResponse struct {

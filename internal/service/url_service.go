@@ -92,7 +92,7 @@ func (s *URLService) CreateURL(ctx context.Context, req *pb.CreateURLRequest) (*
 
 	return &pb.CreateURLResponse{
 		ShortCode: shortCode,
-		ShortUrl:  fmt.Sprintf("http://localhost:8080/%s", shortCode),
+		ShortUrl:  shortURL,
 		LongUrl:   req.LongUrl,
 		CreatedAt: createdAt.Unix(),
 		ExpiresAt: expiresAtUnix,

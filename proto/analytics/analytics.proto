@@ -6,55 +6,27 @@ option go_package = "github.com/Varun5711/shorternit/proto/analytics";
 
 
 service AnalyticsService {
-  // TrackClick records a click event
-  // Called by Redirect Service (async via RabbitMQ in production)
   rpc TrackClick(TrackClickRequest) returns (TrackClickResponse);
-
-  // GetStats returns analytics for a specific URL
-  // Called by API Gateway when user requests analytics
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
-
-  // GetTimeSeries returns click data over time
   rpc GetTimeSeries(GetTimeSeriesRequest) returns (GetTimeSeriesResponse);
-
-  // GetGeoStats returns geographic distribution of clicks
   rpc GetGeoStats(GetGeoStatsRequest) returns (GetGeoStatsResponse);
 }
 
-// ==================== TRACK CLICK ====================
-
 message TrackClickRequest {
-  // The short code that was clicked
   string short_code = 1;
-
-  // IP address of the visitor
   string ip_address = 2;
-
-  // User-Agent string (browser info)
   string user_agent = 3;
-
-  // Referer header (where they came from)
   string referer = 4;
-
-  // Timestamp of the click (Unix seconds)
   int64 timestamp = 5;
 }
 
 message TrackClickResponse {
-  // Whether the click was recorded successfully
   bool success = 1;
-
-  // Unique click ID (for debugging)
   string click_id = 2;
 }
 
-// ==================== GET STATS ====================
-
 message GetStatsRequest {
-  // The short code to get stats for
   string short_code = 1;
-
-  // Optional: Time range (Unix timestamps)
   int64 start_time = 2;
   int64 end_time = 3;
 }

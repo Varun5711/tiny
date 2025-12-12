@@ -186,7 +186,7 @@ func BenchmarkDecodeSmall(b *testing.B) {
 
 func BenchmarkEncodeLarge(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		Encode(9223372036854775807) // MaxInt64
+		Encode(9223372036854775807)
 	}
 }
 
