@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Varun5711/shorternit/cmd/tui/client"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/Varun5711/shorternit/cmd/tui/client"
 )
 
 type loginSuccessMsg struct {
@@ -64,7 +64,8 @@ func (m *LoginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case loginSuccessMsg:
 		m.loading = false
 		m.err = nil
-		return m, nil
+
+		return m, func() tea.Msg { return msg }
 
 	case loginErrorMsg:
 		m.loading = false
@@ -122,7 +123,6 @@ func (m *LoginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *LoginModel) View() string {
 	var b strings.Builder
 
-	// Header
 	title := lipgloss.NewStyle().
 		Foreground(Primary).
 		Bold(true).
@@ -133,19 +133,18 @@ func (m *LoginModel) View() string {
 		Render("Welcome back! Please sign in to continue.")
 
 	b.WriteString(lipgloss.NewStyle().
-		Width(80).
+		Width(120).
 		Align(lipgloss.Center).
 		MarginTop(2).
 		Render(title))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().
-		Width(80).
+		Width(120).
 		Align(lipgloss.Center).
 		MarginBottom(3).
 		Render(subtitle))
 	b.WriteString("\n\n")
 
-	// Email input
 	emailLabel := LabelStyle.Width(15).Render("Email:")
 	var emailInputStyle lipgloss.Style
 	if m.focusedInput == 0 {
@@ -153,12 +152,11 @@ func (m *LoginModel) View() string {
 	} else {
 		emailInputStyle = InputStyle
 	}
-	emailValue := emailInputStyle.Width(50).Render(m.emailInput)
+	emailValue := emailInputStyle.Width(70).Render(m.emailInput)
 	emailField := lipgloss.JoinHorizontal(lipgloss.Left, emailLabel, emailValue)
-	b.WriteString(lipgloss.NewStyle().Width(80).Align(lipgloss.Center).Render(emailField))
+	b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).Render(emailField))
 	b.WriteString("\n\n")
 
-	// Password input
 	passwordLabel := LabelStyle.Width(15).Render("Password:")
 	var passwordInputStyle lipgloss.Style
 	if m.focusedInput == 1 {
@@ -166,35 +164,33 @@ func (m *LoginModel) View() string {
 	} else {
 		passwordInputStyle = InputStyle
 	}
-	// Mask password
+
 	maskedPassword := strings.Repeat("•", len(m.passwordInput))
-	passwordValue := passwordInputStyle.Width(50).Render(maskedPassword)
+	passwordValue := passwordInputStyle.Width(70).Render(maskedPassword)
 	passwordField := lipgloss.JoinHorizontal(lipgloss.Left, passwordLabel, passwordValue)
-	b.WriteString(lipgloss.NewStyle().Width(80).Align(lipgloss.Center).Render(passwordField))
+	b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).Render(passwordField))
 	b.WriteString("\n\n")
 
-	// Status messages
 	if m.loading {
 		loading := InfoStyle.Render("🔄 Logging in...")
-		b.WriteString(lipgloss.NewStyle().Width(80).Align(lipgloss.Center).Render(loading))
+		b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).Render(loading))
 		b.WriteString("\n")
 	}
 
 	if m.err != nil {
 		errMsg := ErrorStyle.Render("❌ " + m.err.Error())
-		b.WriteString(lipgloss.NewStyle().Width(80).Align(lipgloss.Center).Render(errMsg))
+		b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).Render(errMsg))
 		b.WriteString("\n")
 	}
 
-	// Help
 	b.WriteString("\n")
 	help := InfoStyle.Render("tab switch  •  enter login  •  ctrl+l clear  •  ctrl+s signup  •  q quit")
-	b.WriteString(lipgloss.NewStyle().Width(80).Align(lipgloss.Center).Render(help))
+	b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).Render(help))
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(Primary).
 		Padding(2, 4).
-		Width(76).
+		Width(116).
 		Render(b.String())
 }

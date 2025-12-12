@@ -5,16 +5,17 @@ import (
 )
 
 var (
-	Primary   = lipgloss.Color("#7C3AED")
-	Secondary = lipgloss.Color("#A78BFA")
-	Accent    = lipgloss.Color("#60A5FA")
-	Success   = lipgloss.Color("#34D399")
-	Warning   = lipgloss.Color("#FBBF24")
-	Error     = lipgloss.Color("#F87171")
-	Muted     = lipgloss.Color("#9CA3AF")
-	Text      = lipgloss.Color("#F3F4F6")
-	BgDark    = lipgloss.Color("#1F2937")
-	BgLight   = lipgloss.Color("#374151")
+	// Golang-themed colors
+	Primary   = lipgloss.Color("#00ADD8") // Go cyan
+	Secondary = lipgloss.Color("#5DC9E2") // Light cyan
+	Accent    = lipgloss.Color("#CE3262") // Go pink/magenta
+	Success   = lipgloss.Color("#00D9A5") // Bright teal
+	Warning   = lipgloss.Color("#FFB84D") // Warm orange
+	Error     = lipgloss.Color("#FF5A87") // Pink error
+	Muted     = lipgloss.Color("#6B7B8C") // Muted blue-gray
+	Text      = lipgloss.Color("#E3F2FD") // Light blue-white
+	BgDark    = lipgloss.Color("#0A1A2F") // Deep navy
+	BgLight   = lipgloss.Color("#1A2942") // Navy blue
 
 	TitleStyle = lipgloss.NewStyle().
 			Foreground(Primary).
@@ -83,7 +84,7 @@ var (
 			Background(BgLight).
 			Padding(1, 2).
 			Bold(true).
-			Width(80)
+			Width(120)
 
 	FooterStyle = lipgloss.NewStyle().
 			Foreground(Muted).

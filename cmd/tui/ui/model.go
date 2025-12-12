@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+
+	"github.com/Varun5711/shorternit/cmd/tui/client"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/Varun5711/shorternit/cmd/tui/client"
 )
 
 type View int
@@ -16,6 +20,46 @@ const (
 	ListView
 	AnalyticsView
 )
+
+type SessionData struct {
+	Token     string `json:"token"`
+	UserID    string `json:"user_id"`
+	UserName  string `json:"user_name"`
+	UserEmail string `json:"user_email"`
+}
+
+func getSessionPath() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".tiny_session.json")
+}
+
+func saveSession(data SessionData) error {
+	sessionPath := getSessionPath()
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(sessionPath, jsonData, 0600)
+}
+
+func loadSession() (*SessionData, error) {
+	sessionPath := getSessionPath()
+	jsonData, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return nil, err
+	}
+	var data SessionData
+	err = json.Unmarshal(jsonData, &data)
+	if err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+func clearSession() error {
+	sessionPath := getSessionPath()
+	return os.Remove(sessionPath)
+}
 
 type Model struct {
 	currentView View
@@ -54,7 +98,7 @@ func NewModel(grpcClient *client.Client, authClient *client.AuthClient) Model {
 
 	analyticsModel := NewAnalyticsModel()
 
-	return Model{
+	m := Model{
 		currentView:     LoginView,
 		login:           loginModel,
 		signup:          signupModel,
@@ -66,6 +110,21 @@ func NewModel(grpcClient *client.Client, authClient *client.AuthClient) Model {
 		authClient:      authClient,
 		isAuthenticated: false,
 	}
+
+	if session, err := loadSession(); err == nil {
+
+		m.isAuthenticated = true
+		m.token = session.Token
+		m.userID = session.UserID
+		m.userName = session.UserName
+		m.userEmail = session.UserEmail
+		m.client.SetAuth(session.Token, session.UserID)
+		m.analytics.SetToken(session.Token)
+		m.menu.SetUserName(session.UserName)
+		m.currentView = MenuView
+	}
+
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -87,7 +146,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.userEmail = msg.email
 		m.client.SetAuth(msg.token, msg.userID)
 		m.analytics.SetToken(msg.token)
+		m.menu.SetUserName(msg.name)
 		m.currentView = MenuView
+
+		saveSession(SessionData{
+			Token:     msg.token,
+			UserID:    msg.userID,
+			UserName:  msg.name,
+			UserEmail: msg.email,
+		})
+
 		return m, nil
 
 	case signupSuccessMsg:
@@ -98,7 +166,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.userEmail = msg.email
 		m.client.SetAuth(msg.token, msg.userID)
 		m.analytics.SetToken(msg.token)
+		m.menu.SetUserName(msg.name)
 		m.currentView = MenuView
+
+		saveSession(SessionData{
+			Token:     msg.token,
+			UserID:    msg.userID,
+			UserName:  msg.name,
+			UserEmail: msg.email,
+		})
+
 		return m, nil
 
 	case tea.KeyMsg:
@@ -110,12 +187,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentView == MenuView || m.currentView == LoginView || m.currentView == SignupView {
 				return m, tea.Quit
 			}
-			// Go back to menu
+
 			m.currentView = MenuView
 			return m, nil
 
 		case "ctrl+s":
-			// Toggle between login and signup
+
 			if m.currentView == LoginView {
 				m.currentView = SignupView
 				return m, nil
@@ -125,7 +202,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "ctrl+m":
-			// Go to menu (only when authenticated)
+
 			if m.isAuthenticated {
 				m.currentView = MenuView
 				return m, nil
@@ -133,7 +210,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Route to appropriate view
 	switch m.currentView {
 	case LoginView:
 		updatedLogin, cmd := m.login.Update(msg)
@@ -149,18 +225,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updatedMenu, cmd := m.menu.Update(msg)
 		m.menu = updatedMenu.(*MenuModel)
 		if m.menu.selected != -1 {
-			// Map menu selection to view and trigger data load
+
 			switch m.menu.selected {
 			case 0:
 				m.currentView = CreateView
 			case 1:
 				m.currentView = ListView
-				// Reset list model to trigger auto-load
+
 				m.list.loaded = false
+
+				updatedList, listCmd := m.list.Update(nil)
+				m.list = updatedList.(*ListModel)
+				m.menu.selected = -1
+				return m, listCmd
 			case 2:
 				m.currentView = AnalyticsView
-				// Reset analytics model to trigger auto-load
+
 				m.analytics.loaded = false
+
+				updatedAnalytics, analyticsCmd := m.analytics.Update(nil)
+				m.analytics = updatedAnalytics.(*AnalyticsModel)
+				m.menu.selected = -1
+				return m, analyticsCmd
+			case 3:
+
+				clearSession()
+				m.isAuthenticated = false
+				m.token = ""
+				m.userID = ""
+				m.userName = ""
+				m.userEmail = ""
+				m.currentView = LoginView
 			}
 			m.menu.selected = -1
 		}
@@ -198,7 +293,7 @@ func (m Model) View() string {
 			Render(" (" + m.userEmail + ")")
 
 		statusBar = lipgloss.NewStyle().
-			Width(80).
+			Width(120).
 			Align(lipgloss.Left).
 			Background(BgDark).
 			Padding(0, 2).
@@ -222,7 +317,6 @@ func (m Model) View() string {
 		mainContent = m.analytics.View()
 	}
 
-	// Combine status bar and content
 	if statusBar != "" {
 		return lipgloss.JoinVertical(lipgloss.Left, statusBar, "\n", mainContent)
 	}

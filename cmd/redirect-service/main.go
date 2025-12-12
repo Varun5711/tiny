@@ -9,6 +9,7 @@ import (
 	"github.com/Varun5711/shorternit/internal/events"
 	"github.com/Varun5711/shorternit/internal/handlers"
 	"github.com/Varun5711/shorternit/internal/logger"
+	"github.com/Varun5711/shorternit/internal/middleware"
 	"github.com/Varun5711/shorternit/internal/redis"
 )
 
@@ -43,12 +44,21 @@ func main() {
 		log.Fatal("Failed to connect to url-service: %v", err)
 	}
 
+	rateLimiter := middleware.NewRateLimiter(
+		redisClient.GetClient(),
+		cfg.RateLimit.Requests,
+		cfg.RateLimit.Window,
+	)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", redirectHandler.HandleRedirect)
 
+	handler := middleware.Recovery(log)(mux)
+	handler = rateLimiter.Middleware(handler)
+
 	log.Info("Listening on :%s", cfg.Services.RedirectServicePort)
 
-	if err := http.ListenAndServe(":"+cfg.Services.RedirectServicePort, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Services.RedirectServicePort, handler); err != nil {
 		log.Fatal("Server error: %v", err)
 	}
 }

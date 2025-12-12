@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Varun5711/shorternit/cmd/tui/client"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/Varun5711/shorternit/cmd/tui/client"
 )
 
 type ClickEvent struct {
@@ -41,6 +41,8 @@ type clickEventsErrorMsg struct {
 type AnalyticsModel struct {
 	events  []ClickEvent
 	cursor  int
+	page    int
+	perPage int
 	loading bool
 	err     error
 	client  *client.Client
@@ -49,7 +51,10 @@ type AnalyticsModel struct {
 }
 
 func NewAnalyticsModel() *AnalyticsModel {
-	return &AnalyticsModel{}
+	return &AnalyticsModel{
+		perPage: 10,
+		page:    0,
+	}
 }
 
 func (m *AnalyticsModel) SetClient(c *client.Client) {
@@ -62,7 +67,7 @@ func (m *AnalyticsModel) SetToken(token string) {
 
 func fetchClickEventsCmd(token string) tea.Cmd {
 	return func() tea.Msg {
-		// Call API gateway analytics endpoint
+
 		req, err := http.NewRequest("GET", "http://localhost:8080/api/analytics/clicks?limit=50", nil)
 		if err != nil {
 			return clickEventsErrorMsg{err: err}
@@ -115,19 +120,35 @@ func (m *AnalyticsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		totalPages := (len(m.events) + m.perPage - 1) / m.perPage
 		switch msg.String() {
+		case "left", "h":
+			if m.page > 0 {
+				m.page--
+				m.cursor = 0
+			}
+		case "right", "l":
+			if m.page < totalPages-1 {
+				m.page++
+				m.cursor = 0
+			}
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.events)-1 {
+			start := m.page * m.perPage
+			end := min(start+m.perPage, len(m.events))
+			pageSize := end - start
+			if m.cursor < pageSize-1 {
 				m.cursor++
 			}
 		case "r":
 			if !m.loading && m.token != "" {
 				m.loading = true
 				m.err = nil
+				m.page = 0
+				m.cursor = 0
 				return m, fetchClickEventsCmd(m.token)
 			}
 		}
@@ -144,7 +165,8 @@ func (m *AnalyticsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *AnalyticsModel) View() string {
 	var b strings.Builder
 
-	header := TitleStyle.Render("📊 CLICK ANALYTICS")
+	icon := lipgloss.NewStyle().Foreground(Success).Render("📊")
+	header := icon + " " + TitleStyle.Render("CLICK ANALYTICS") + " " + icon
 	b.WriteString(lipgloss.NewStyle().
 		Width(120).
 		Align(lipgloss.Center).
@@ -170,7 +192,7 @@ func (m *AnalyticsModel) View() string {
 		b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).MarginTop(2).Render(empty))
 		b.WriteString("\n")
 	} else {
-		// Table header
+
 		headerStyle := lipgloss.NewStyle().
 			Foreground(Accent).
 			Bold(true).
@@ -179,35 +201,36 @@ func (m *AnalyticsModel) View() string {
 		tableHeader := lipgloss.JoinHorizontal(lipgloss.Left,
 			headerStyle.Width(18).Render("IP Address"),
 			headerStyle.Width(14).Render("Short Code"),
+			headerStyle.Width(40).Render("Original URL"),
 			headerStyle.Width(20).Render("Clicked At"),
-			headerStyle.Width(20).Render("Location"),
+			headerStyle.Width(25).Render("Location"),
 			headerStyle.Width(18).Render("Browser"),
 			headerStyle.Width(15).Render("Device"),
 		)
 
-		b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Left).MarginLeft(2).Render(tableHeader))
+		b.WriteString(lipgloss.NewStyle().Width(180).Align(lipgloss.Left).MarginLeft(2).Render(tableHeader))
 		b.WriteString("\n")
 
 		separator := lipgloss.NewStyle().
 			Foreground(Muted).
-			Render(strings.Repeat("─", 116))
+			Render(strings.Repeat("─", 165))
 		b.WriteString(lipgloss.NewStyle().MarginLeft(2).Render(separator))
 		b.WriteString("\n")
 
-		// Table rows
-		for i, event := range m.events {
-			if i >= 10 { // Show only first 10
-				break
-			}
+		start := m.page * m.perPage
+		end := min(start+m.perPage, len(m.events))
+
+		for i := start; i < end; i++ {
+			event := m.events[i]
+			relativeIndex := i - start
 
 			rowStyle := lipgloss.NewStyle().Padding(0, 1)
-			if i == m.cursor {
+			if relativeIndex == m.cursor {
 				rowStyle = rowStyle.Foreground(Accent).Bold(true)
 			} else {
 				rowStyle = rowStyle.Foreground(Text)
 			}
 
-			// Format location
 			location := event.City
 			if location == "" {
 				location = event.Country
@@ -218,13 +241,11 @@ func (m *AnalyticsModel) View() string {
 				location = "Unknown"
 			}
 
-			// Format browser
 			browser := event.Browser
 			if browser == "" {
 				browser = "Unknown"
 			}
 
-			// Format device
 			device := event.DeviceType
 			if device == "" {
 				device = "Unknown"
@@ -233,8 +254,9 @@ func (m *AnalyticsModel) View() string {
 			row := lipgloss.JoinHorizontal(lipgloss.Left,
 				rowStyle.Width(18).Render(truncate(event.IPAddress, 16)),
 				rowStyle.Width(14).Render(truncate(event.ShortCode, 12)),
+				rowStyle.Width(40).Render(truncate(event.OriginalURL, 38)),
 				rowStyle.Width(20).Render(event.ClickedAt),
-				rowStyle.Width(20).Render(truncate(location, 18)),
+				rowStyle.Width(25).Render(truncate(location, 23)),
 				rowStyle.Width(18).Render(truncate(browser, 16)),
 				rowStyle.Width(15).Render(truncate(device, 13)),
 			)
@@ -243,17 +265,21 @@ func (m *AnalyticsModel) View() string {
 			b.WriteString("\n")
 		}
 
-		// Summary
 		b.WriteString("\n")
-		summary := InfoStyle.Render(fmt.Sprintf("Showing %d of %d total click events", min(10, len(m.events)), len(m.events)))
-		b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).Render(summary))
+		totalPages := (len(m.events) + m.perPage - 1) / m.perPage
+		if totalPages == 0 {
+			totalPages = 1
+		}
+		pagination := InfoStyle.Render(fmt.Sprintf("Page %d/%d  •  Showing %d-%d of %d total events",
+			m.page+1, totalPages, start+1, end, len(m.events)))
+		b.WriteString(lipgloss.NewStyle().Width(140).Align(lipgloss.Center).Render(pagination))
 	}
 
 	b.WriteString("\n\n")
-	help := InfoStyle.Render("↑/↓ navigate  •  r refresh  •  q back")
-	b.WriteString(lipgloss.NewStyle().Width(120).Align(lipgloss.Center).Render(help))
+	help := InfoStyle.Render("↑/↓ navigate  •  ←/→ page  •  r refresh  •  q back")
+	b.WriteString(lipgloss.NewStyle().Width(140).Align(lipgloss.Center).Render(help))
 
-	return BoxStyle.Width(116).Render(b.String())
+	return BoxStyle.Width(136).Render(b.String())
 }
 
 func min(a, b int) int {
