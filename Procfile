@@ -1,4 +1,4 @@
-docker: cd deployments/docker && docker-compose up
+docker: cd deployments/docker-compose && docker-compose up
 url-service: go run cmd/url-service/main.go
 api-gateway: go run cmd/api-gateway/main.go
 redirect-service: go run cmd/redirect-service/main.go
