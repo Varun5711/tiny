@@ -1,0 +1,31 @@
+{
+    "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
+    "version": "1.0.0",
+    "description": "Terminal UI client for Tiny URL Shortener",
+    "homepage": "https://github.com/Varun5711/shorternit",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Varun5711/shorternit/releases/download/v1.0.0/tiny-cli-windows-amd64.exe",
+            "hash": "PLACEHOLDER_SHA256_WINDOWS_AMD64"
+        },
+        "arm64": {
+            "url": "https://github.com/Varun5711/shorternit/releases/download/v1.0.0/tiny-cli-windows-arm64.exe",
+            "hash": "PLACEHOLDER_SHA256_WINDOWS_ARM64"
+        }
+    },
+    "bin": "tiny-cli-windows-amd64.exe",
+    "checkver": {
+        "github": "https://github.com/Varun5711/shorternit"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Varun5711/shorternit/releases/download/v$version/tiny-cli-windows-amd64.exe"
+            },
+            "arm64": {
+                "url": "https://github.com/Varun5711/shorternit/releases/download/v$version/tiny-cli-windows-arm64.exe"
+            }
+        }
+    }
+}

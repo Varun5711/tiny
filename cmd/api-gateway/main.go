@@ -118,6 +118,9 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
+	swaggerHandler := handlers.NewSwaggerHandler("api/openapi/api-gateway.yaml")
+	swaggerHandler.RegisterRoutes(mux)
+
 	mux.HandleFunc("/api/analytics/clicks", authMiddleware.RequireAuth(analyticsHandler.GetClickEvents))
 
 	mux.HandleFunc("/api/analytics/", func(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,1095 @@
+openapi: 3.0.3
+info:
+  title: Tiny API
+  description: |
+    Complete REST API for the Tiny URL Shortener service.
+
+    ## Features
+    - JWT-based authentication
+    - URL shortening with custom aliases
+    - Comprehensive analytics
+    - Rate limiting (100 requests/minute)
+    - Multi-tier caching
+
+    ## Base URL
+    - Development: `http://localhost:8080`
+    - Redirect Service: `http://localhost:8081`
+
+  version: 1.0.0
+  contact:
+    name: Tiny URL Shortener
+    url: https://github.com/Varun5711/shorternit
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://localhost:8081
+    description: Redirect service
+
+tags:
+  - name: Authentication
+    description: User registration, login, and profile management
+  - name: URL Management
+    description: Create, list, and manage shortened URLs
+  - name: Analytics
+    description: Click tracking and statistics
+  - name: System
+    description: Health checks and system information
+
+paths:
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: Returns service health status
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: Create a new user account and receive JWT token
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - name
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                  example: securePassword123
+                name:
+                  type: string
+                  minLength: 1
+                  example: John Doe
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and receive JWT token
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: securePassword123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/profile:
+    get:
+      tags:
+        - Authentication
+      summary: Get user profile
+      description: Retrieve authenticated user's profile information
+      operationId: getProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Unauthorized - Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/urls:
+    post:
+      tags:
+        - URL Management
+      summary: Create short URL
+      description: Create a new shortened URL with auto-generated code
+      operationId: createURL
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - long_url
+              properties:
+                long_url:
+                  type: string
+                  format: uri
+                  description: The original long URL to shorten
+                  example: https://example.com/very/long/path/to/resource
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Optional expiration timestamp
+                  example: "2025-12-31T23:59:59Z"
+      responses:
+        '201':
+          description: URL created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/URLResponse'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: Request limit per window
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: Remaining requests in current window
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+                format: int64
+              description: Unix timestamp when limit resets
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags:
+        - URL Management
+      summary: List user URLs
+      description: Retrieve all shortened URLs created by the authenticated user
+      operationId: listURLs
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: URLs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/URLListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/urls/custom:
+    post:
+      tags:
+        - URL Management
+      summary: Create custom alias URL
+      description: Create a shortened URL with a user-specified alias
+      operationId: createCustomURL
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - alias
+                - long_url
+              properties:
+                alias:
+                  type: string
+                  pattern: '^[a-zA-Z0-9_-]+$'
+                  minLength: 3
+                  maxLength: 50
+                  description: Custom alias for the short URL
+                  example: my-custom-link
+                long_url:
+                  type: string
+                  format: uri
+                  description: The original long URL to shorten
+                  example: https://example.com/very/long/path/to/resource
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Optional expiration timestamp
+                  example: "2025-12-31T23:59:59Z"
+      responses:
+        '201':
+          description: Custom URL created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/URLResponse'
+        '400':
+          description: Invalid input or alias format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Alias already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/analytics/clicks:
+    get:
+      tags:
+        - Analytics
+      summary: Get click events
+      description: Retrieve detailed click events for specified short code or all codes
+      operationId: getClickEvents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: short_code
+          in: query
+          required: false
+          description: Filter by specific short code
+          schema:
+            type: string
+            example: abc123
+        - name: limit
+          in: query
+          required: false
+          description: Number of events to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+            example: 50
+      responses:
+        '200':
+          description: Click events retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClickEventsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/analytics/{shortCode}/stats:
+    get:
+      tags:
+        - Analytics
+      summary: Get URL statistics
+      description: Get basic statistics for a shortened URL (public endpoint)
+      operationId: getStats
+      parameters:
+        - name: shortCode
+          in: path
+          required: true
+          description: The short code to get statistics for
+          schema:
+            type: string
+            example: abc123
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/URLStats'
+        '404':
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/analytics/{shortCode}/timeline:
+    get:
+      tags:
+        - Analytics
+      summary: Get click timeline
+      description: Get click distribution over time (public endpoint)
+      operationId: getTimeline
+      parameters:
+        - name: shortCode
+          in: path
+          required: true
+          description: The short code to get timeline for
+          schema:
+            type: string
+            example: abc123
+        - name: days
+          in: query
+          required: false
+          description: Number of days to retrieve
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+            example: 7
+      responses:
+        '200':
+          description: Timeline retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Timeline'
+        '404':
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/analytics/{shortCode}/geo:
+    get:
+      tags:
+        - Analytics
+      summary: Get geographic statistics
+      description: Get geographic distribution of clicks (public endpoint)
+      operationId: getGeoStats
+      parameters:
+        - name: shortCode
+          in: path
+          required: true
+          description: The short code to get geo stats for
+          schema:
+            type: string
+            example: abc123
+      responses:
+        '200':
+          description: Geographic statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoStats'
+        '404':
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/analytics/{shortCode}/devices:
+    get:
+      tags:
+        - Analytics
+      summary: Get device statistics
+      description: Get device type distribution of clicks (public endpoint)
+      operationId: getDeviceStats
+      parameters:
+        - name: shortCode
+          in: path
+          required: true
+          description: The short code to get device stats for
+          schema:
+            type: string
+            example: abc123
+      responses:
+        '200':
+          description: Device statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStats'
+        '404':
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/analytics/{shortCode}/referrers:
+    get:
+      tags:
+        - Analytics
+      summary: Get top referrers
+      description: Get top HTTP referrers for a shortened URL (public endpoint)
+      operationId: getReferrers
+      parameters:
+        - name: shortCode
+          in: path
+          required: true
+          description: The short code to get referrers for
+          schema:
+            type: string
+            example: abc123
+        - name: limit
+          in: query
+          required: false
+          description: Number of top referrers to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+            example: 10
+      responses:
+        '200':
+          description: Referrers retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReferrerStats'
+        '404':
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /{shortCode}:
+    get:
+      tags:
+        - URL Management
+      summary: Redirect to original URL
+      description: |
+        Redirects to the original long URL and tracks the click event.
+        This endpoint is served by the Redirect Service on port 8081.
+        Rate limiting is applied per client IP.
+      operationId: redirect
+      servers:
+        - url: http://localhost:8081
+          description: Redirect service
+      parameters:
+        - name: shortCode
+          in: path
+          required: true
+          description: The short code to redirect
+          schema:
+            type: string
+            example: abc123
+      responses:
+        '302':
+          description: Redirect to original URL
+          headers:
+            Location:
+              description: The original long URL
+              schema:
+                type: string
+                format: uri
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: Request limit per window
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: Remaining requests in current window
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+                format: int64
+              description: Unix timestamp when limit resets
+        '404':
+          description: Short code not found or expired
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: URL not found
+        '429':
+          description: Rate limit exceeded
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+                format: int64
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Rate limit exceeded
+        '500':
+          description: Internal server error
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Internal server error
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login or registration
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: Invalid request
+        message:
+          type: string
+          description: Detailed error description
+          example: The long_url field is required
+      required:
+        - error
+
+    AuthResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: Unique user identifier
+          example: "1234567890"
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: user@example.com
+        name:
+          type: string
+          description: User full name
+          example: John Doe
+        token:
+          type: string
+          description: JWT authentication token
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        expires_at:
+          type: integer
+          format: int64
+          description: Token expiration timestamp (Unix seconds)
+          example: 1735689600
+      required:
+        - user_id
+        - email
+        - name
+        - token
+
+    UserProfile:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: Unique user identifier
+          example: "1234567890"
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: user@example.com
+        name:
+          type: string
+          description: User full name
+          example: John Doe
+        created_at:
+          type: integer
+          format: int64
+          description: Account creation timestamp (Unix seconds)
+          example: 1704153600
+        updated_at:
+          type: integer
+          format: int64
+          description: Last update timestamp (Unix seconds)
+          example: 1704153600
+      required:
+        - user_id
+        - email
+        - name
+
+    URLResponse:
+      type: object
+      properties:
+        short_code:
+          type: string
+          description: The generated short code
+          example: abc123
+        short_url:
+          type: string
+          format: uri
+          description: The complete short URL
+          example: http://localhost:8081/abc123
+        long_url:
+          type: string
+          format: uri
+          description: The original long URL
+          example: https://example.com/very/long/path/to/resource
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2025-01-01T12:00:00Z"
+        expires_at:
+          type: string
+          format: date-time
+          description: Expiration timestamp (if set)
+          example: "2025-12-31T23:59:59Z"
+        qr_code:
+          type: string
+          description: Base64-encoded QR code image (optional)
+          example: iVBORw0KGgoAAAANSUhEUgAA...
+      required:
+        - short_code
+        - short_url
+        - long_url
+        - created_at
+
+    URLListResponse:
+      type: object
+      properties:
+        urls:
+          type: array
+          items:
+            $ref: '#/components/schemas/URLItem'
+        total:
+          type: integer
+          format: int32
+          description: Total number of URLs
+          example: 15
+        has_more:
+          type: boolean
+          description: Whether more URLs are available
+          example: false
+      required:
+        - urls
+        - total
+        - has_more
+
+    URLItem:
+      type: object
+      properties:
+        short_code:
+          type: string
+          description: The short code
+          example: abc123
+        short_url:
+          type: string
+          format: uri
+          description: The complete short URL
+          example: http://localhost:8081/abc123
+        long_url:
+          type: string
+          format: uri
+          description: The original long URL
+          example: https://example.com/path
+        clicks:
+          type: integer
+          format: int64
+          description: Total number of clicks
+          example: 42
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2025-01-01T12:00:00Z"
+        expires_at:
+          type: string
+          format: date-time
+          description: Expiration timestamp (if set)
+          example: "2025-12-31T23:59:59Z"
+        qr_code:
+          type: string
+          description: Base64-encoded QR code image (optional)
+          example: iVBORw0KGgoAAAANSUhEUgAA...
+      required:
+        - short_code
+        - short_url
+        - long_url
+        - clicks
+        - created_at
+
+    ClickEventsResponse:
+      type: object
+      properties:
+        clicks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClickEvent'
+        total:
+          type: integer
+          description: Total number of click events
+          example: 142
+      required:
+        - clicks
+        - total
+
+    ClickEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier
+          example: "evt_123456789"
+        short_code:
+          type: string
+          description: The short code that was clicked
+          example: abc123
+        original_url:
+          type: string
+          format: uri
+          description: The original long URL
+          example: https://example.com/path
+        clicked_at:
+          type: string
+          description: Click timestamp
+          example: "2025-01-15 14:30:22"
+        ip_address:
+          type: string
+          format: ipv4
+          description: Client IP address
+          example: "192.168.1.1"
+        country:
+          type: string
+          description: Country name
+          example: United States
+        region:
+          type: string
+          description: Region/state name
+          example: California
+        city:
+          type: string
+          description: City name
+          example: San Francisco
+        browser:
+          type: string
+          description: Browser name
+          example: Chrome
+        browser_version:
+          type: string
+          description: Browser version
+          example: "120.0"
+        os:
+          type: string
+          description: Operating system
+          example: Windows
+        os_version:
+          type: string
+          description: OS version
+          example: "11"
+        device_type:
+          type: string
+          description: Device type
+          example: Desktop
+          enum:
+            - Desktop
+            - Mobile
+            - Tablet
+            - Other
+        referer:
+          type: string
+          format: uri
+          description: HTTP referer
+          example: https://google.com
+      required:
+        - event_id
+        - short_code
+        - original_url
+        - clicked_at
+
+    URLStats:
+      type: object
+      properties:
+        short_code:
+          type: string
+          example: abc123
+        total_clicks:
+          type: integer
+          format: int64
+          description: Total number of clicks
+          example: 1523
+        unique_visitors:
+          type: integer
+          format: int64
+          description: Number of unique IP addresses
+          example: 842
+      required:
+        - short_code
+        - total_clicks
+        - unique_visitors
+
+    Timeline:
+      type: object
+      properties:
+        data_points:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+                example: "2025-01-15"
+              clicks:
+                type: integer
+                format: int64
+                example: 145
+      required:
+        - data_points
+
+    GeoStats:
+      type: object
+      properties:
+        countries:
+          type: array
+          items:
+            type: object
+            properties:
+              country:
+                type: string
+                example: United States
+              clicks:
+                type: integer
+                format: int64
+                example: 523
+              percentage:
+                type: number
+                format: float
+                example: 34.5
+        cities:
+          type: array
+          items:
+            type: object
+            properties:
+              city:
+                type: string
+                example: San Francisco
+              country:
+                type: string
+                example: United States
+              clicks:
+                type: integer
+                format: int64
+                example: 145
+      required:
+        - countries
+
+    DeviceStats:
+      type: object
+      properties:
+        desktop:
+          type: integer
+          format: int64
+          description: Desktop clicks
+          example: 850
+        mobile:
+          type: integer
+          format: int64
+          description: Mobile clicks
+          example: 520
+        tablet:
+          type: integer
+          format: int64
+          description: Tablet clicks
+          example: 153
+        other:
+          type: integer
+          format: int64
+          description: Other device clicks
+          example: 0
+      required:
+        - desktop
+        - mobile
+        - tablet
+        - other
+
+    ReferrerStats:
+      type: object
+      properties:
+        referrers:
+          type: array
+          items:
+            type: object
+            properties:
+              referer:
+                type: string
+                format: uri
+                example: https://google.com
+              clicks:
+                type: integer
+                format: int64
+                example: 342
+              percentage:
+                type: number
+                format: float
+                example: 22.5
+      required:
+        - referrers
