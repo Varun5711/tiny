@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline-worker
+  namespace: tiny-url
+  labels:
+    app: pipeline-worker
+    tier: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pipeline-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: pipeline-worker
+        tier: worker
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: pipeline-worker
+          image: ghcr.io/varun5711/tiny-pipeline-worker:latest
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: tiny-url-config
+            - secretRef:
+                name: tiny-url-secrets
+          env:
+            - name: ANALYTICS_CONSUMER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: pipeline-worker
+                topologyKey: kubernetes.io/hostname

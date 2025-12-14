@@ -33,6 +33,12 @@ EOF
 echo "Step 3: Reloading PostgreSQL configuration..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "SELECT pg_reload_conf();"
 
+echo "Step 4: Creating database schema..."
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" < /docker-entrypoint-initdb.d/schema.sql
+
+echo "Step 5: Adding user management schema..."
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" < /docker-entrypoint-initdb.d/add_users.sql
+
 echo "==============================================="
 echo "Replication setup completed successfully!"
 echo "Primary is ready to accept replica connections"

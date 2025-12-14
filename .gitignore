@@ -1,6 +1,3 @@
 .env
 bin/
 mprocs.log
-
-# Deferred refactoring plans
-REDUNDANT_CODE_REMOVAL_PLAN.md

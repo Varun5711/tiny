@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-replica
+  namespace: tiny-url
+  labels:
+    app: postgresql
+    role: replica
+spec:
+  serviceName: postgresql-replica
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgresql
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: postgresql
+        role: replica
+    spec:
+      initContainers:
+        - name: init-replica
+          image: timescale/timescaledb:latest-pg16
+          command:
+            - bash
+            - -c
+            - |
+              until pg_isready -h postgresql-primary -p 5432 -U urlshortener; do
+                echo "Waiting for primary..."
+                sleep 2
+              done
+              if [ ! -s /var/lib/postgresql/data/pgdata/PG_VERSION ]; then
+                echo "Cloning primary..."
+                rm -rf /var/lib/postgresql/data/pgdata/*
+                PGPASSWORD=$REPLICATOR_PASSWORD pg_basebackup \
+                  -h postgresql-primary \
+                  -D /var/lib/postgresql/data/pgdata \
+                  -U replicator \
+                  -v -P -R
+              fi
+          env:
+            - name: REPLICATOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secrets
+                  key: replicator-password
+          volumeMounts:
+            - name: postgresql-data
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: postgresql
+          image: timescale/timescaledb:latest-pg16
+          env:
+            - name: POSTGRES_USER
+              value: "urlshortener"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secrets
+                  key: postgres-password
+            - name: POSTGRES_DB
+              value: "urlshortener"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          args:
+            - -c
+            - shared_preload_libraries=timescaledb
+          ports:
+            - containerPort: 5432
+              name: postgresql
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          volumeMounts:
+            - name: postgresql-data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - urlshortener
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - urlshortener
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: postgresql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-replica
+  namespace: tiny-url
+  labels:
+    app: postgresql
+    role: replica
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgresql
+  selector:
+    app: postgresql
+    role: replica
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-replica-1
+  namespace: tiny-url
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    statefulset.kubernetes.io/pod-name: postgresql-replica-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-replica-2
+  namespace: tiny-url
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    statefulset.kubernetes.io/pod-name: postgresql-replica-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-replica-3
+  namespace: tiny-url
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    statefulset.kubernetes.io/pod-name: postgresql-replica-2

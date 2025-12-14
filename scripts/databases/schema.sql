@@ -1,8 +1,23 @@
+DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS urls CASCADE;
 DROP TABLE IF EXISTS url_analytics CASCADE;
+
+CREATE TABLE users (
+    id VARCHAR(50) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    CONSTRAINT email_valid CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+);
+
+CREATE INDEX idx_users_email ON users(email);
+
 CREATE TABLE urls (
-    short_code VARCHAR(10) PRIMARY KEY,
+    short_code VARCHAR(20) PRIMARY KEY,
     long_url TEXT NOT NULL,
+    user_id VARCHAR(50),
     clicks BIGINT DEFAULT 0 NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
@@ -17,9 +32,11 @@ CREATE INDEX idx_urls_created_at ON urls(created_at DESC);
 CREATE INDEX idx_urls_expires_at ON urls(expires_at)
 WHERE expires_at IS NOT NULL;
 
+CREATE INDEX idx_urls_user_id ON urls(user_id);
+
 CREATE TABLE url_analytics (
     id BIGSERIAL PRIMARY KEY,
-    short_code VARCHAR(10) NOT NULL REFERENCES urls(short_code) ON DELETE CASCADE,
+    short_code VARCHAR(20) NOT NULL REFERENCES urls(short_code) ON DELETE CASCADE,
     ip_address INET,
     user_agent TEXT,
     referer TEXT,

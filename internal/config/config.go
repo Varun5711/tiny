@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -76,9 +75,8 @@ type RateLimitConfig struct {
 }
 
 func Load() (*Config, error) {
-	if err := godotenv.Load(); err != nil {
-		return nil, fmt.Errorf("error loading .env file: %w", err)
-	}
+	// Load .env if it exists (local dev), ignore if not (K8s uses ConfigMaps/Secrets)
+	_ = godotenv.Load()
 
 	cfg := &Config{
 		Database: DatabaseConfig{

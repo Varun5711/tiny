@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tiny-url
+
+resources:
+  - ../../base
+  - pdb.yaml
+
+commonLabels:
+  environment: production
+
+images:
+  - name: ghcr.io/varun5711/tiny-api-gateway
+    newTag: latest
+  - name: ghcr.io/varun5711/tiny-redirect-service
+    newTag: latest
+  - name: ghcr.io/varun5711/tiny-url-service
+    newTag: latest
+  - name: ghcr.io/varun5711/tiny-user-service
+    newTag: latest
+  - name: ghcr.io/varun5711/tiny-analytics-worker
+    newTag: latest
+  - name: ghcr.io/varun5711/tiny-pipeline-worker
+    newTag: latest
+  - name: ghcr.io/varun5711/tiny-cleanup-worker
+    newTag: latest
+
+configMapGenerator:
+  - name: tiny-url-config
+    behavior: merge
+    literals:
+      - BASE_URL=https://tiny.link
+      - LOG_LEVEL=INFO
+      - LOG_COLORS=false
