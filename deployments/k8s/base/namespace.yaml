@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tiny-url
+  labels:
+    app.kubernetes.io/name: tiny-url
+    app.kubernetes.io/part-of: url-shortener

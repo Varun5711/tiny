@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-primary
+  namespace: tiny-url
+  labels:
+    app: postgresql
+    role: primary
+spec:
+  serviceName: postgresql-primary
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: postgresql
+        role: primary
+    spec:
+      containers:
+        - name: postgresql
+          image: timescale/timescaledb:latest-pg16
+          env:
+            - name: POSTGRES_USER
+              value: "urlshortener"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secrets
+                  key: postgres-password
+            - name: POSTGRES_DB
+              value: "urlshortener"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          args:
+            - -c
+            - wal_level=replica
+            - -c
+            - hot_standby=on
+            - -c
+            - max_wal_senders=10
+            - -c
+            - max_replication_slots=10
+            - -c
+            - hot_standby_feedback=on
+            - -c
+            - shared_preload_libraries=timescaledb
+          ports:
+            - containerPort: 5432
+              name: postgresql
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          volumeMounts:
+            - name: postgresql-data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - urlshortener
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - urlshortener
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: postgresql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-primary
+  namespace: tiny-url
+  labels:
+    app: postgresql
+    role: primary
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgresql
+  selector:
+    app: postgresql
+    role: primary
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-secrets
+  namespace: tiny-url
+type: Opaque
+stringData:
+  postgres-password: "CHANGE_THIS_PASSWORD"
+  replicator-password: "CHANGE_THIS_REPLICATOR_PASSWORD"

@@ -1,26 +1,31 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /build
 
 COPY go.mod go.sum ./
-RUN go mod download && go mod verify
+RUN --mount=type=cache,target=/go/pkg/mod go mod download && go mod verify
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \
     -trimpath \
     -o /build/cleanup-worker \
     ./cmd/cleanup-worker
 
-FROM scratch
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=builder /build/cleanup-worker /cleanup-worker
+COPY --from=builder /build/cleanup-worker /app/cleanup-worker
 
 USER 65534:65534
 
-ENTRYPOINT ["/cleanup-worker"]
+ENTRYPOINT ["/app/cleanup-worker"]

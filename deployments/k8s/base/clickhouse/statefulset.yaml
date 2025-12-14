@@ -1,0 +1,141 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: tiny-url
+  labels:
+    app: clickhouse
+    tier: analytics
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+        tier: analytics
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:latest
+          env:
+            - name: CLICKHOUSE_DB
+              value: "analytics"
+            - name: CLICKHOUSE_USER
+              value: "clickhouse"
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tiny-url-secrets
+                  key: CLICKHOUSE_PASSWORD
+            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+              value: "1"
+          ports:
+            - containerPort: 8123
+              name: http
+            - containerPort: 9000
+              name: native
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: clickhouse-data
+              mountPath: /var/lib/clickhouse
+            - name: clickhouse-init
+              mountPath: /docker-entrypoint-initdb.d
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8123
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8123
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: clickhouse-init
+          configMap:
+            name: clickhouse-init-scripts
+  volumeClaimTemplates:
+    - metadata:
+        name: clickhouse-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: tiny-url
+  labels:
+    app: clickhouse
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8123
+      targetPort: 8123
+      name: http
+    - port: 9000
+      targetPort: 9000
+      name: native
+  selector:
+    app: clickhouse
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-init-scripts
+  namespace: tiny-url
+data:
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS analytics;
+
+    CREATE TABLE IF NOT EXISTS analytics.click_events (
+        event_id UUID DEFAULT generateUUIDv4(),
+        short_code String,
+        original_url String,
+        user_id String,
+        clicked_at DateTime DEFAULT now(),
+        ip_address String,
+        country String DEFAULT '',
+        region String DEFAULT '',
+        city String DEFAULT '',
+        latitude Float64 DEFAULT 0,
+        longitude Float64 DEFAULT 0,
+        user_agent String DEFAULT '',
+        browser String DEFAULT '',
+        browser_version String DEFAULT '',
+        os String DEFAULT '',
+        os_version String DEFAULT '',
+        device_type String DEFAULT '',
+        referer String DEFAULT '',
+        utm_source String DEFAULT '',
+        utm_medium String DEFAULT '',
+        utm_campaign String DEFAULT ''
+    ) ENGINE = MergeTree()
+    PARTITION BY toYYYYMM(clicked_at)
+    ORDER BY (short_code, clicked_at)
+    TTL clicked_at + INTERVAL 90 DAY;
+
+    CREATE TABLE IF NOT EXISTS analytics.click_aggregates (
+        short_code String,
+        date Date,
+        hour UInt8,
+        click_count UInt64,
+        unique_visitors UInt64
+    ) ENGINE = SummingMergeTree()
+    PARTITION BY toYYYYMM(date)
+    ORDER BY (short_code, date, hour);

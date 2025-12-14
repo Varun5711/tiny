@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup-worker
+  namespace: tiny-url
+  labels:
+    app: cleanup-worker
+    tier: worker
+spec:
+  schedule: "0 2 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: cleanup-worker
+            tier: worker
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup-worker
+              image: ghcr.io/varun5711/tiny-cleanup-worker:latest
+              imagePullPolicy: Never
+              envFrom:
+                - configMapRef:
+                    name: tiny-url-config
+                - secretRef:
+                    name: tiny-url-secrets
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"

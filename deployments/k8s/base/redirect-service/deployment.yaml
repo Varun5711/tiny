@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redirect-service
+  namespace: tiny-url
+  labels:
+    app: redirect-service
+    tier: frontend
+    critical: "true"
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: redirect-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: redirect-service
+        tier: frontend
+        critical: "true"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redirect-service
+          image: ghcr.io/varun5711/tiny-redirect-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8081
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: tiny-url-config
+            - secretRef:
+                name: tiny-url-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: redirect-service
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: redirect-service

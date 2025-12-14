@@ -1,0 +1,31 @@
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /build
+
+COPY go.mod go.sum ./
+COPY cmd/tui/go.mod cmd/tui/go.sum ./cmd/tui/
+
+RUN go mod download && go mod verify
+RUN cd cmd/tui && go mod download && go mod verify
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -trimpath \
+    -o /build/tui \
+    ./cmd/tui
+
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=builder /build/tui /app/tui
+
+USER 65534:65534
+
+ENTRYPOINT ["/app/tui"]

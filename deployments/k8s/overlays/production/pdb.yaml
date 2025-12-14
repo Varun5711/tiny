@@ -1,0 +1,65 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway-pdb
+  namespace: tiny-url
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redirect-service-pdb
+  namespace: tiny-url
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: redirect-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: url-service-pdb
+  namespace: tiny-url
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: url-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: user-service-pdb
+  namespace: tiny-url
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: user-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: analytics-worker-pdb
+  namespace: tiny-url
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: analytics-worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pipeline-worker-pdb
+  namespace: tiny-url
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: pipeline-worker

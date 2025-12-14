@@ -19,7 +19,6 @@ func GenerateQRCode(url string) (string, error) {
 	return fmt.Sprintf("data:image/png;base64,%s", encoded), nil
 }
 
-// GenerateQRCodeASCII generates a QR code as ASCII art for terminal display
 func GenerateQRCodeASCII(url string) (string, error) {
 	qr, err := qrcode.New(url, qrcode.Low)
 	if err != nil {

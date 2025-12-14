@@ -1,0 +1,331 @@
+version: "3.8"
+
+services:
+  postgres-primary:
+    image: timescale/timescaledb:latest-pg16
+    container_name: url-shortener-db-primary
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: urlshortener
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: urlshortener
+    command: |
+      postgres
+      -c wal_level=replica
+      -c hot_standby=on
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby_feedback=on
+      -c shared_preload_libraries=timescaledb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-primary-data:/var/lib/postgresql/data
+      - ../../scripts/databases/init-primary.sh:/docker-entrypoint-initdb.d/000_init-primary.sh
+      - ../../scripts/databases/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ../../scripts/databases/add_users.sql:/docker-entrypoint-initdb.d/add_users.sql
+    networks:
+      - url-shortener-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U urlshortener"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-replica1:
+    image: timescale/timescaledb:latest-pg16
+    container_name: url-shortener-db-replica1
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: urlshortener
+      POSTGRES_PASSWORD: devpassword
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
+    command: |
+      bash -c "
+      until pg_isready -h postgres-primary -p 5432 -U urlshortener; do
+        echo 'Waiting for primary to be ready...'
+        sleep 2
+      done
+
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        echo 'Cloning primary database...'
+        rm -rf /var/lib/postgresql/data/*
+        pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -R -S replication_slot_1
+      fi
+
+      chown -R postgres:postgres /var/lib/postgresql/data
+      chmod 700 /var/lib/postgresql/data
+      exec gosu postgres postgres
+      "
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-replica1-data:/var/lib/postgresql/data
+    networks:
+      - url-shortener-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  postgres-replica2:
+    image: timescale/timescaledb:latest-pg16
+    container_name: url-shortener-db-replica2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: urlshortener
+      POSTGRES_PASSWORD: devpassword
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
+    command: |
+      bash -c "
+      until pg_isready -h postgres-primary -p 5432 -U urlshortener; do
+        echo 'Waiting for primary to be ready...'
+        sleep 2
+      done
+
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        echo 'Cloning primary database...'
+        rm -rf /var/lib/postgresql/data/*
+        pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -R -S replication_slot_2
+      fi
+
+      chown -R postgres:postgres /var/lib/postgresql/data
+      chmod 700 /var/lib/postgresql/data
+      exec gosu postgres postgres
+      "
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-replica2-data:/var/lib/postgresql/data
+    networks:
+      - url-shortener-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  postgres-replica3:
+    image: timescale/timescaledb:latest-pg16
+    container_name: url-shortener-db-replica3
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: urlshortener
+      POSTGRES_PASSWORD: devpassword
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
+    command: |
+      bash -c "
+      until pg_isready -h postgres-primary -p 5432 -U urlshortener; do
+        echo 'Waiting for primary to be ready...'
+        sleep 2
+      done
+
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        echo 'Cloning primary database...'
+        rm -rf /var/lib/postgresql/data/*
+        pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -R -S replication_slot_3
+      fi
+
+      chown -R postgres:postgres /var/lib/postgresql/data
+      chmod 700 /var/lib/postgresql/data
+      exec gosu postgres postgres
+      "
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres-replica3-data:/var/lib/postgresql/data
+    networks:
+      - url-shortener-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: url-shortener-redis
+    command: redis-server --appendonly yes --appendfsync everysec
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - url-shortener-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: url-shortener-clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse_password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ../../scripts/databases/init-clickhouse.sql:/docker-entrypoint-initdb.d/init-clickhouse.sql
+    networks:
+      - url-shortener-network
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  api-gateway:
+    image: ghcr.io/varun5711/tiny-api-gateway:latest
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.api-gateway
+    container_name: tiny-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../../.env
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - url-shortener-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  url-service:
+    image: ghcr.io/varun5711/tiny-url-service:latest
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.url-service
+    container_name: tiny-url-service
+    restart: unless-stopped
+    ports:
+      - "50051:50051"
+    env_file:
+      - ../../.env
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - url-shortener-network
+
+  user-service:
+    image: ghcr.io/varun5711/tiny-user-service:latest
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.user-service
+    container_name: tiny-user-service
+    restart: unless-stopped
+    ports:
+      - "50052:50052"
+    env_file:
+      - ../../.env
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    networks:
+      - url-shortener-network
+
+  redirect-service:
+    image: ghcr.io/varun5711/tiny-redirect-service:latest
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.redirect-service
+    container_name: tiny-redirect-service
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    env_file:
+      - ../../.env
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - url-shortener-network
+
+  analytics-worker:
+    image: ghcr.io/varun5711/tiny-analytics-worker:latest
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.analytics-worker
+    container_name: tiny-analytics-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - url-shortener-network
+
+  pipeline-worker:
+    image: ghcr.io/varun5711/tiny-pipeline-worker:latest
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.pipeline-worker
+    container_name: tiny-pipeline-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - url-shortener-network
+
+  cleanup-worker:
+    image: ghcr.io/varun5711/tiny-cleanup-worker:latest
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.cleanup-worker
+    container_name: tiny-cleanup-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    networks:
+      - url-shortener-network
+
+volumes:
+  postgres-primary-data:
+  postgres-replica1-data:
+  postgres-replica2-data:
+  postgres-replica3-data:
+  redis-data:
+  clickhouse-data:
+
+networks:
+  url-shortener-network:
+    driver: bridge
