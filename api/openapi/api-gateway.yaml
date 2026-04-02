@@ -4,7 +4,6 @@ info:
   description: |
     Complete REST API for the Tiny URL Shortener service.
 
-    ## Features
     - JWT-based authentication
     - URL shortening with custom aliases
     - Comprehensive analytics
