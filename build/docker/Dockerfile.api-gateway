@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     -o /build/api-gateway \
     ./cmd/api-gateway
 
-FROM alpine:latest
+FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata
 
@@ -33,6 +33,6 @@ USER 65534:65534
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/app/api-gateway", "-health-check"] || exit 1
+    CMD ["wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
 
 ENTRYPOINT ["/app/api-gateway"]
