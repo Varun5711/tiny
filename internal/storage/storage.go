@@ -16,5 +16,8 @@ type Storage interface {
 	AliasExists(ctx context.Context, alias string) (bool, error)
 	AliasExistsPrimary(ctx context.Context, alias string) (bool, error)
 	CreateCustomURL(ctx context.Context, alias, longURL string, expiresAt *time.Time, qrCode, userID string) error
+	Delete(ctx context.Context, shortCode string) error
 	DeleteExpiredURLs(ctx context.Context) (int64, error)
+	ListPaginated(ctx context.Context, limit, offset int32) ([]*models.URL, int32, error)
+	ListByUserIDPaginated(ctx context.Context, userID string, limit, offset int32) ([]*models.URL, int32, error)
 }

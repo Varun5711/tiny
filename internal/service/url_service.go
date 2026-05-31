@@ -146,36 +146,20 @@ func (s *URLService) ListURLs(ctx context.Context, req *pb.ListURLsRequest) (*pb
 		offset = 0
 	}
 
-	var allURLs []*models.URL
+	var urls []*models.URL
+	var total int32
 	var err error
 
 	if req.UserId != "" {
-		allURLs, err = s.store.ListByUserID(ctx, req.UserId)
+		urls, total, err = s.store.ListByUserIDPaginated(ctx, req.UserId, limit, offset)
 	} else {
-		allURLs, err = s.store.List(ctx)
+		urls, total, err = s.store.ListPaginated(ctx, limit, offset)
 	}
 
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list URLs: %v", err)
 	}
 
-	total := int32(len(allURLs))
-	start := int(offset)
-	end := int(offset + limit)
-
-	if start >= len(allURLs) {
-		return &pb.ListURLsResponse{
-			Urls:    []*pb.URL{},
-			Total:   total,
-			HasMore: false,
-		}, nil
-	}
-
-	if end > len(allURLs) {
-		end = len(allURLs)
-	}
-
-	urls := allURLs[start:end]
 	pbURLs := make([]*pb.URL, len(urls))
 	for i, url := range urls {
 		var expiresAtUnix int64
@@ -195,7 +179,7 @@ func (s *URLService) ListURLs(ctx context.Context, req *pb.ListURLsRequest) (*pb
 		}
 	}
 
-	hasMore := end < len(allURLs)
+	hasMore := (offset + limit) < total
 
 	return &pb.ListURLsResponse{
 		Urls:    pbURLs,
@@ -209,15 +193,11 @@ func (s *URLService) DeleteURL(ctx context.Context, req *pb.DeleteURLRequest) (*
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
 	}
 
-	url, err := s.store.GetByShortCode(ctx, req.ShortCode)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get URL: %v", err)
-	}
-
-	if url == nil {
-		return &pb.DeleteURLResponse{
-			Success: false,
-		}, nil
+	if err := s.store.Delete(ctx, req.ShortCode); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return &pb.DeleteURLResponse{Success: false}, nil
+		}
+		return nil, status.Errorf(codes.Internal, "failed to delete URL: %v", err)
 	}
 
 	cacheKey := "url:" + req.ShortCode

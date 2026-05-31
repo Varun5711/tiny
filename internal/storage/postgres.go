@@ -134,6 +134,86 @@ func (s *PostgresStorage) List(ctx context.Context) ([]*models.URL, error) {
 	return urls, nil
 }
 
+func (s *PostgresStorage) Delete(ctx context.Context, shortCode string) error {
+	query := `DELETE FROM urls WHERE short_code = $1`
+	cmdTag, err := s.db.Write().Exec(ctx, query, shortCode)
+	if err != nil {
+		return fmt.Errorf("failed to delete URL: %w", err)
+	}
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf("URL with short code %s not found", shortCode)
+	}
+	return nil
+}
+
+func (s *PostgresStorage) ListPaginated(ctx context.Context, limit, offset int32) ([]*models.URL, int32, error) {
+	var total int32
+	countQuery := `SELECT COUNT(*) FROM urls WHERE (expires_at IS NULL OR expires_at > NOW())`
+	if err := s.db.Read().QueryRow(ctx, countQuery).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count URLs: %w", err)
+	}
+
+	query := `
+		SELECT short_code, long_url, clicks, created_at, expires_at, COALESCE(qr_code, ''), COALESCE(user_id, '')
+		FROM urls
+		WHERE (expires_at IS NULL OR expires_at > NOW())
+		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2
+	`
+	rows, err := s.db.Read().Query(ctx, query, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []*models.URL
+	for rows.Next() {
+		var url models.URL
+		if err := rows.Scan(&url.ShortCode, &url.LongURL, &url.Clicks, &url.CreatedAt, &url.ExpiresAt, &url.QRCode, &url.UserID); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan row: %w", err)
+		}
+		urls = append(urls, &url)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating rows: %w", err)
+	}
+	return urls, total, nil
+}
+
+func (s *PostgresStorage) ListByUserIDPaginated(ctx context.Context, userID string, limit, offset int32) ([]*models.URL, int32, error) {
+	var total int32
+	countQuery := `SELECT COUNT(*) FROM urls WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW())`
+	if err := s.db.Read().QueryRow(ctx, countQuery, userID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count URLs: %w", err)
+	}
+
+	query := `
+		SELECT short_code, long_url, clicks, created_at, expires_at, COALESCE(qr_code, ''), COALESCE(user_id, '')
+		FROM urls
+		WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+	rows, err := s.db.Read().Query(ctx, query, userID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []*models.URL
+	for rows.Next() {
+		var url models.URL
+		if err := rows.Scan(&url.ShortCode, &url.LongURL, &url.Clicks, &url.CreatedAt, &url.ExpiresAt, &url.QRCode, &url.UserID); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan row: %w", err)
+		}
+		urls = append(urls, &url)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating rows: %w", err)
+	}
+	return urls, total, nil
+}
+
 func (p *PostgresStorage) AliasExists(ctx context.Context, alias string) (bool, error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM urls WHERE short_code = $1)`
