@@ -11,7 +11,9 @@ import (
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/redis"
 	"github.com/Varun5711/shorternit/internal/storage"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	redislib "github.com/redis/go-redis/v9"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
 )
 
@@ -50,6 +52,16 @@ func provideCache(cfg *config.Config, rc *redislib.Client) *cache.Cache {
 	return cache.NewMultiTierCache(cfg.Cache.L1Capacity, rc, cfg.Cache.L2TTL)
 }
 
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "cleanup-worker",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
+}
+
 func provideStorage(db *database.DBManager) *storage.PostgresStorage {
 	return storage.NewPostgresStorage(db)
 }
@@ -58,6 +70,7 @@ func registerLifecycle(
 	lc fx.Lifecycle,
 	store *storage.PostgresStorage,
 	urlCache *cache.Cache,
+	tp *sdktrace.TracerProvider,
 	redisClient *redis.RedisClient,
 	dbManager *database.DBManager,
 	log *logger.Logger,
@@ -80,6 +93,7 @@ func registerLifecycle(
 					log.Info("Shutting down cleanup-worker...")
 					cancel()
 					wg.Wait()
+					tracing.ShutdownTracer(ctx, tp)
 					redisClient.Close()
 					dbManager.Close()
 					return nil
@@ -127,6 +141,7 @@ func main() {
 		fx.Provide(
 			provideConfig,
 			provideLogger,
+			provideTracerProvider,
 			provideRedisClient,
 			provideRawRedisClient,
 			provideDBManager,

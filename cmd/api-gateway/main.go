@@ -17,8 +17,10 @@ import (
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/middleware"
 	"github.com/Varun5711/shorternit/internal/redis"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	userpb "github.com/Varun5711/shorternit/proto/user"
 	redislib "github.com/redis/go-redis/v9"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -105,6 +107,16 @@ func provideAuthMiddleware(userClient userpb.UserServiceClient) *middleware.Auth
 
 func provideRateLimiter(cfg *config.Config, rc *redislib.Client) *middleware.RateLimiter {
 	return middleware.NewRateLimiter(rc, cfg.RateLimit.Requests, cfg.RateLimit.Window)
+}
+
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "api-gateway",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
 }
 
 func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
@@ -228,6 +240,7 @@ func provideHTTPServer(
 	log *logger.Logger,
 ) *http.Server {
 	handler := middleware.CORS(cfg.CORS.AllowedOrigins)(mux)
+	handler = middleware.Tracing("api-gateway")(handler)
 	handler = middleware.RequestID(handler)
 	handler = middleware.Recovery(log)(handler)
 	handler = rateLimiter.Middleware(handler)
@@ -248,6 +261,7 @@ func provideHTTPServer(
 func registerLifecycle(
 	lc fx.Lifecycle,
 	server *http.Server,
+	tp *sdktrace.TracerProvider,
 	redisClient *redis.RedisClient,
 	dbManager *database.DBManager,
 	clickhouseClient *clickhouse.Client,
@@ -272,6 +286,7 @@ func registerLifecycle(
 				log.Error("Server shutdown error: %v", err)
 			}
 
+			tracing.ShutdownTracer(ctx, tp)
 			redisClient.Close()
 			dbManager.Close()
 			clickhouseClient.Close()
@@ -295,6 +310,7 @@ func main() {
 		fx.Provide(
 			provideConfig,
 			provideLogger,
+			provideTracerProvider,
 			provideRedisClient,
 			provideDBManager,
 			provideClickHouseClient,

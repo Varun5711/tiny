@@ -9,7 +9,9 @@ import (
 	"github.com/Varun5711/shorternit/internal/database"
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/redis"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	redislib "github.com/redis/go-redis/v9"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
 )
 
@@ -49,6 +51,16 @@ func provideDBManager(cfg *config.Config) (*database.DBManager, error) {
 	})
 }
 
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "analytics-worker",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
+}
+
 func provideWorkerParams(cfg *config.Config) WorkerParams {
 	return WorkerParams{
 		StreamName:    cfg.Redis.StreamName,
@@ -63,6 +75,7 @@ func provideWorkerParams(cfg *config.Config) WorkerParams {
 func registerLifecycle(
 	lc fx.Lifecycle,
 	redisClient *redis.RedisClient,
+	tp *sdktrace.TracerProvider,
 	dbManager *database.DBManager,
 	params WorkerParams,
 	log *logger.Logger,
@@ -91,6 +104,7 @@ func registerLifecycle(
 					log.Info("Shutting down analytics-worker...")
 					cancel()
 					wg.Wait()
+					tracing.ShutdownTracer(ctx, tp)
 					redisClient.Close()
 					dbManager.Close()
 					return nil
@@ -186,6 +200,7 @@ func main() {
 		fx.Provide(
 			provideConfig,
 			provideLogger,
+			provideTracerProvider,
 			provideRedisClient,
 			provideDBManager,
 			provideWorkerParams,

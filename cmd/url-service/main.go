@@ -13,8 +13,11 @@ import (
 	"github.com/Varun5711/shorternit/internal/redis"
 	"github.com/Varun5711/shorternit/internal/service"
 	"github.com/Varun5711/shorternit/internal/storage"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	pb "github.com/Varun5711/shorternit/proto/url"
 	redislib "github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 )
@@ -90,8 +93,18 @@ func provideURLService(
 	return service.NewURLService(store, idGen, urlCache, rc, esClient, cfg.Services.BaseURL, cfg.Services.DefaultURLTTL)
 }
 
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "url-service",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
+}
+
 func provideGRPCServer() *grpc.Server {
-	return grpc.NewServer()
+	return grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 }
 
 func provideListener() (net.Listener, error) {
@@ -103,6 +116,7 @@ func registerLifecycle(
 	grpcServer *grpc.Server,
 	urlService *service.URLService,
 	listener net.Listener,
+	tp *sdktrace.TracerProvider,
 	redisClient *redis.RedisClient,
 	dbManager *database.DBManager,
 	log *logger.Logger,
@@ -122,6 +136,7 @@ func registerLifecycle(
 		OnStop: func(ctx context.Context) error {
 			log.Info("Shutting down url-service...")
 			grpcServer.GracefulStop()
+			tracing.ShutdownTracer(ctx, tp)
 			redisClient.Close()
 			dbManager.Close()
 			return nil
@@ -134,6 +149,7 @@ func main() {
 		fx.Provide(
 			provideConfig,
 			provideLogger,
+			provideTracerProvider,
 			provideRedisClient,
 			provideDBManager,
 			provideIDGenerator,

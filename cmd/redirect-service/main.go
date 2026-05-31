@@ -12,7 +12,9 @@ import (
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/middleware"
 	"github.com/Varun5711/shorternit/internal/redis"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	redislib "github.com/redis/go-redis/v9"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
 )
 
@@ -48,6 +50,16 @@ func provideRedirectHandler(cfg *config.Config, producer *events.ClickProducer, 
 	return handlers.NewRedirectHandler(cfg.Services.URLServiceAddr, producer, urlCache)
 }
 
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "redirect-service",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
+}
+
 func provideRateLimiter(cfg *config.Config, rc *redislib.Client) *middleware.RateLimiter {
 	return middleware.NewRateLimiter(rc, cfg.RateLimit.Requests, cfg.RateLimit.Window)
 }
@@ -70,7 +82,8 @@ func provideHTTPServer(
 		w.Write([]byte("OK"))
 	})
 
-	handler := middleware.Recovery(log)(mux)
+	handler := middleware.Tracing("redirect-service")(mux)
+	handler = middleware.Recovery(log)(handler)
 	handler = rateLimiter.Middleware(handler)
 
 	return &http.Server{
@@ -85,6 +98,7 @@ func provideHTTPServer(
 func registerLifecycle(
 	lc fx.Lifecycle,
 	server *http.Server,
+	tp *sdktrace.TracerProvider,
 	redisClient *redis.RedisClient,
 	log *logger.Logger,
 ) {
@@ -103,6 +117,7 @@ func registerLifecycle(
 			if err := server.Shutdown(ctx); err != nil {
 				log.Error("Shutdown error: %v", err)
 			}
+			tracing.ShutdownTracer(ctx, tp)
 			redisClient.Close()
 			return nil
 		},
@@ -114,6 +129,7 @@ func main() {
 		fx.Provide(
 			provideConfig,
 			provideLogger,
+			provideTracerProvider,
 			provideRedisClient,
 			provideRawRedisClient,
 			provideCache,

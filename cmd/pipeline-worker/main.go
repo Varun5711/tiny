@@ -12,8 +12,10 @@ import (
 	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	"github.com/Varun5711/shorternit/internal/enrichment"
 	"github.com/Varun5711/shorternit/internal/logger"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
 )
 
@@ -39,6 +41,16 @@ func provideRedisClient(cfg *config.Config) (*redis.Client, error) {
 
 func provideClickHouseClient(cfg *config.Config) (*clickhouse.Client, error) {
 	return clickhouse.NewClient(cfg.ClickHouse)
+}
+
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "pipeline-worker",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
 }
 
 func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
@@ -86,6 +98,7 @@ func providePipelineWorker(
 func registerLifecycle(
 	lc fx.Lifecycle,
 	worker *PipelineWorker,
+	tp *sdktrace.TracerProvider,
 	redisClient *redis.Client,
 	chClient *clickhouse.Client,
 	geoEnricher *enrichment.GeoIPEnricher,
@@ -115,6 +128,7 @@ func registerLifecycle(
 					log.Info("Shutting down pipeline worker...")
 					cancel()
 					wg.Wait()
+					tracing.ShutdownTracer(ctx, tp)
 					geoEnricher.Close()
 					chClient.Close()
 					redisClient.Close()
@@ -311,6 +325,7 @@ func main() {
 		fx.Provide(
 			provideConfig,
 			provideLogger,
+			provideTracerProvider,
 			provideRedisClient,
 			provideClickHouseClient,
 			provideESClient,

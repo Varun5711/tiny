@@ -11,7 +11,10 @@ import (
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/service"
 	"github.com/Varun5711/shorternit/internal/storage"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	pb "github.com/Varun5711/shorternit/proto/user"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 )
@@ -50,8 +53,18 @@ func provideUserService(us *storage.UserStorage, jwt *auth.JWTManager) *service.
 	return service.NewUserService(us, jwt)
 }
 
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "user-service",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
+}
+
 func provideGRPCServer() *grpc.Server {
-	return grpc.NewServer()
+	return grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 }
 
 func provideListener() (net.Listener, error) {
@@ -67,6 +80,7 @@ func registerLifecycle(
 	grpcServer *grpc.Server,
 	userService *service.UserService,
 	listener net.Listener,
+	tp *sdktrace.TracerProvider,
 	dbManager *database.DBManager,
 	log *logger.Logger,
 ) {
@@ -85,6 +99,7 @@ func registerLifecycle(
 		OnStop: func(ctx context.Context) error {
 			log.Info("Shutting down user-service...")
 			grpcServer.GracefulStop()
+			tracing.ShutdownTracer(ctx, tp)
 			dbManager.Close()
 			return nil
 		},
@@ -96,6 +111,7 @@ func main() {
 		fx.Provide(
 			provideConfig,
 			provideLogger,
+			provideTracerProvider,
 			provideDBManager,
 			provideJWTManager,
 			provideUserStorage,

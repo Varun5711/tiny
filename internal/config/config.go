@@ -14,6 +14,7 @@ type Config struct {
 	Redis         RedisConfig
 	ClickHouse    ClickHouseConfig
 	Elasticsearch ElasticsearchConfig
+	Tracing       TracingConfig
 	Services      ServicesConfig
 	Analytics     AnalyticsConfig
 	Snowflake     SnowflakeConfig
@@ -21,6 +22,12 @@ type Config struct {
 	RateLimit     RateLimitConfig
 	CORS          CORSConfig
 	JWT           JWTConfig
+}
+
+type TracingConfig struct {
+	Enabled        bool
+	JaegerEndpoint string
+	SampleRate     float64
 }
 
 type ElasticsearchConfig struct {
@@ -154,6 +161,11 @@ func Load() (*Config, error) {
 		CORS: CORSConfig{
 			AllowedOrigins: getEnvAsSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
 		},
+		Tracing: TracingConfig{
+			Enabled:        getEnv("TRACING_ENABLED", "false") == "true",
+			JaegerEndpoint: getEnv("JAEGER_ENDPOINT", "http://localhost:4318"),
+			SampleRate:     getEnvAsFloat("TRACING_SAMPLE_RATE", 1.0),
+		},
 		Elasticsearch: ElasticsearchConfig{
 			Addresses:   getEnvAsSlice("ES_ADDRESSES", []string{"http://localhost:9200"}),
 			Username:    getEnv("ES_USERNAME", ""),
@@ -197,6 +209,15 @@ func getEnvAsSlice(key string, defaultValue []string) []string {
 		}
 		if len(result) > 0 {
 			return result
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsFloat(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			return f
 		}
 	}
 	return defaultValue
