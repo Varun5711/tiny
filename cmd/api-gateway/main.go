@@ -12,6 +12,7 @@ import (
 	"github.com/Varun5711/shorternit/internal/clickhouse"
 	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/database"
+	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	"github.com/Varun5711/shorternit/internal/handlers"
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/middleware"
@@ -82,8 +83,8 @@ func provideUserServiceClient(conn *grpc.ClientConn) userpb.UserServiceClient {
 // Provider functions — handlers & middleware
 // ---------------------------------------------------------------------------
 
-func provideHTTPHandler(cfg *config.Config) (*handlers.HTTPHandler, error) {
-	return handlers.NewHTTPHandler(cfg.Services.URLServiceAddr, cfg.Services.BaseURL)
+func provideHTTPHandler(cfg *config.Config, esClient *es.Client) (*handlers.HTTPHandler, error) {
+	return handlers.NewHTTPHandler(cfg.Services.URLServiceAddr, cfg.Services.BaseURL, esClient)
 }
 
 func provideAuthHandler(userClient userpb.UserServiceClient) *handlers.AuthHandler {
@@ -104,6 +105,23 @@ func provideAuthMiddleware(userClient userpb.UserServiceClient) *middleware.Auth
 
 func provideRateLimiter(cfg *config.Config, rc *redislib.Client) *middleware.RateLimiter {
 	return middleware.NewRateLimiter(rc, cfg.RateLimit.Requests, cfg.RateLimit.Window)
+}
+
+func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
+	if !cfg.Elasticsearch.Enabled {
+		return nil
+	}
+	client, err := es.NewClient(es.Config{
+		Addresses:   cfg.Elasticsearch.Addresses,
+		Username:    cfg.Elasticsearch.Username,
+		Password:    cfg.Elasticsearch.Password,
+		IndexPrefix: cfg.Elasticsearch.IndexPrefix,
+	})
+	if err != nil {
+		log.Warn("Elasticsearch unavailable, search disabled: %v", err)
+		return nil
+	}
+	return client
 }
 
 func provideSwaggerHandler() *handlers.SwaggerHandler {
@@ -173,6 +191,9 @@ func provideMux(
 		w.Write([]byte("OK"))
 	})
 
+	// Search
+	mux.HandleFunc("/api/search", httpHandler.SearchURLs)
+
 	// Swagger
 	swaggerHandler.RegisterRoutes(mux)
 
@@ -230,6 +251,7 @@ func registerLifecycle(
 	redisClient *redis.RedisClient,
 	dbManager *database.DBManager,
 	clickhouseClient *clickhouse.Client,
+	esClient *es.Client,
 	userConn *grpc.ClientConn,
 	log *logger.Logger,
 ) {
@@ -253,6 +275,9 @@ func registerLifecycle(
 			redisClient.Close()
 			dbManager.Close()
 			clickhouseClient.Close()
+			if esClient != nil {
+				esClient.Close()
+			}
 			userConn.Close()
 
 			return nil
@@ -273,6 +298,7 @@ func main() {
 			provideRedisClient,
 			provideDBManager,
 			provideClickHouseClient,
+			provideESClient,
 			provideUserGRPCConn,
 			provideRawRedisClient,
 		),

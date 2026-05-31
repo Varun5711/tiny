@@ -7,6 +7,7 @@ import (
 	"github.com/Varun5711/shorternit/internal/cache"
 	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/database"
+	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	"github.com/Varun5711/shorternit/internal/idgen"
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/redis"
@@ -61,14 +62,32 @@ func provideStorage(db *database.DBManager) *storage.PostgresStorage {
 	return storage.NewPostgresStorage(db)
 }
 
+func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
+	if !cfg.Elasticsearch.Enabled {
+		return nil
+	}
+	client, err := es.NewClient(es.Config{
+		Addresses:   cfg.Elasticsearch.Addresses,
+		Username:    cfg.Elasticsearch.Username,
+		Password:    cfg.Elasticsearch.Password,
+		IndexPrefix: cfg.Elasticsearch.IndexPrefix,
+	})
+	if err != nil {
+		log.Warn("Elasticsearch unavailable, running without search: %v", err)
+		return nil
+	}
+	return client
+}
+
 func provideURLService(
 	store *storage.PostgresStorage,
 	idGen *idgen.Generator,
 	urlCache *cache.Cache,
 	rc *redislib.Client,
+	esClient *es.Client,
 	cfg *config.Config,
 ) *service.URLService {
-	return service.NewURLService(store, idGen, urlCache, rc, cfg.Services.BaseURL, cfg.Services.DefaultURLTTL)
+	return service.NewURLService(store, idGen, urlCache, rc, esClient, cfg.Services.BaseURL, cfg.Services.DefaultURLTTL)
 }
 
 func provideGRPCServer() *grpc.Server {
@@ -121,6 +140,7 @@ func main() {
 			provideRawRedisClient,
 			provideCache,
 			provideStorage,
+			provideESClient,
 			provideURLService,
 			provideGRPCServer,
 			provideListener,

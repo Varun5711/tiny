@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
@@ -16,35 +15,51 @@ type Logger struct {
 }
 
 func New(service string) *Logger {
-	var cfg zap.Config
+	return newLogger(service, nil)
+}
 
-	format := os.Getenv("LOG_FORMAT")
-	if strings.ToLower(format) == "text" {
-		cfg = zap.NewDevelopmentConfig()
-		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	} else {
-		cfg = zap.NewProductionConfig()
-		cfg.EncoderConfig.TimeKey = "timestamp"
-		cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	}
+func NewWithSyncer(service string, extraSyncer zapcore.WriteSyncer) *Logger {
+	return newLogger(service, extraSyncer)
+}
 
+func newLogger(service string, extraSyncer zapcore.WriteSyncer) *Logger {
+	var level zapcore.Level
 	envLevel := os.Getenv("LOG_LEVEL")
 	switch strings.ToUpper(envLevel) {
 	case "DEBUG":
-		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+		level = zap.DebugLevel
 	case "WARN":
-		cfg.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
+		level = zap.WarnLevel
 	case "ERROR":
-		cfg.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
+		level = zap.ErrorLevel
 	default:
-		cfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+		level = zap.InfoLevel
 	}
 
-	z, err := cfg.Build(zap.AddCallerSkip(1))
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize logger: %v", err))
+	var encoder zapcore.Encoder
+	format := os.Getenv("LOG_FORMAT")
+	if strings.ToLower(format) == "text" {
+		encCfg := zap.NewDevelopmentEncoderConfig()
+		encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		encoder = zapcore.NewConsoleEncoder(encCfg)
+	} else {
+		encCfg := zap.NewProductionEncoderConfig()
+		encCfg.TimeKey = "timestamp"
+		encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		encoder = zapcore.NewJSONEncoder(encCfg)
 	}
 
+	cores := []zapcore.Core{
+		zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level),
+	}
+
+	if extraSyncer != nil {
+		jsonEnc := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+		cores = append(cores, zapcore.NewCore(jsonEnc, extraSyncer, level))
+	}
+
+	core := zapcore.NewTee(cores...)
+	z := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
 	z = z.With(zap.String("service", service))
 
 	return &Logger{

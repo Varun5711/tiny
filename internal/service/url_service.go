@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Varun5711/shorternit/internal/cache"
+	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	"github.com/Varun5711/shorternit/internal/idgen"
 	"github.com/Varun5711/shorternit/internal/lock"
 	"github.com/Varun5711/shorternit/internal/models"
@@ -25,16 +26,18 @@ type URLService struct {
 	idGen       *idgen.Generator
 	cache       *cache.Cache
 	redisClient *redis.Client
+	esClient    *es.Client
 	baseURL     string
 	defaultTTL  time.Duration
 }
 
-func NewURLService(store storage.Storage, idGen *idgen.Generator, urlCache *cache.Cache, redisClient *redis.Client, baseURL string, defaultTTL time.Duration) *URLService {
+func NewURLService(store storage.Storage, idGen *idgen.Generator, urlCache *cache.Cache, redisClient *redis.Client, esClient *es.Client, baseURL string, defaultTTL time.Duration) *URLService {
 	return &URLService{
 		store:       store,
 		idGen:       idGen,
 		cache:       urlCache,
 		redisClient: redisClient,
+		esClient:    esClient,
 		baseURL:     baseURL,
 		defaultTTL:  defaultTTL,
 	}
@@ -80,6 +83,17 @@ func (s *URLService) CreateURL(ctx context.Context, req *pb.CreateURLRequest) (*
 
 	if err := s.store.Save(ctx, url); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to save URL: %v", err)
+	}
+
+	if s.esClient != nil {
+		_ = s.esClient.IndexURL(ctx, es.URLDocument{
+			ShortCode: shortCode,
+			LongURL:   req.LongUrl,
+			UserID:    req.UserId,
+			CreatedAt: createdAt,
+			ExpiresAt: expiresAt,
+			Clicks:    0,
+		})
 	}
 
 	cacheKey := "url:" + shortCode
@@ -198,6 +212,10 @@ func (s *URLService) DeleteURL(ctx context.Context, req *pb.DeleteURLRequest) (*
 			return &pb.DeleteURLResponse{Success: false}, nil
 		}
 		return nil, status.Errorf(codes.Internal, "failed to delete URL: %v", err)
+	}
+
+	if s.esClient != nil {
+		_ = s.esClient.DeleteURL(ctx, req.ShortCode)
 	}
 
 	cacheKey := "url:" + req.ShortCode

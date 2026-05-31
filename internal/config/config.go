@@ -10,16 +10,25 @@ import (
 )
 
 type Config struct {
-	Database   DatabaseConfig
-	Redis      RedisConfig
-	ClickHouse ClickHouseConfig
-	Services   ServicesConfig
-	Analytics  AnalyticsConfig
-	Snowflake  SnowflakeConfig
-	Cache      CacheConfig
-	RateLimit  RateLimitConfig
-	CORS       CORSConfig
-	JWT        JWTConfig
+	Database      DatabaseConfig
+	Redis         RedisConfig
+	ClickHouse    ClickHouseConfig
+	Elasticsearch ElasticsearchConfig
+	Services      ServicesConfig
+	Analytics     AnalyticsConfig
+	Snowflake     SnowflakeConfig
+	Cache         CacheConfig
+	RateLimit     RateLimitConfig
+	CORS          CORSConfig
+	JWT           JWTConfig
+}
+
+type ElasticsearchConfig struct {
+	Addresses   []string
+	Username    string
+	Password    string
+	IndexPrefix string
+	Enabled     bool
 }
 
 type CORSConfig struct {
@@ -144,6 +153,13 @@ func Load() (*Config, error) {
 		},
 		CORS: CORSConfig{
 			AllowedOrigins: getEnvAsSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+		},
+		Elasticsearch: ElasticsearchConfig{
+			Addresses:   getEnvAsSlice("ES_ADDRESSES", []string{"http://localhost:9200"}),
+			Username:    getEnv("ES_USERNAME", ""),
+			Password:    getEnv("ES_PASSWORD", ""),
+			IndexPrefix: getEnv("ES_INDEX_PREFIX", "shorternit"),
+			Enabled:     getEnv("ES_ENABLED", "false") == "true",
 		},
 		JWT: JWTConfig{
 			Secret:        getEnv("JWT_SECRET", ""),

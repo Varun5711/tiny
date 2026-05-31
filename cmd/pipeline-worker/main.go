@@ -9,6 +9,7 @@ import (
 
 	"github.com/Varun5711/shorternit/internal/clickhouse"
 	"github.com/Varun5711/shorternit/internal/config"
+	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	"github.com/Varun5711/shorternit/internal/enrichment"
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/google/uuid"
@@ -40,6 +41,23 @@ func provideClickHouseClient(cfg *config.Config) (*clickhouse.Client, error) {
 	return clickhouse.NewClient(cfg.ClickHouse)
 }
 
+func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
+	if !cfg.Elasticsearch.Enabled {
+		return nil
+	}
+	client, err := es.NewClient(es.Config{
+		Addresses:   cfg.Elasticsearch.Addresses,
+		Username:    cfg.Elasticsearch.Username,
+		Password:    cfg.Elasticsearch.Password,
+		IndexPrefix: cfg.Elasticsearch.IndexPrefix,
+	})
+	if err != nil {
+		log.Warn("Elasticsearch unavailable, running without indexing: %v", err)
+		return nil
+	}
+	return client
+}
+
 func provideGeoEnricher() *enrichment.GeoIPEnricher {
 	return enrichment.NewGeoIPEnricher()
 }
@@ -47,12 +65,14 @@ func provideGeoEnricher() *enrichment.GeoIPEnricher {
 func providePipelineWorker(
 	redisClient *redis.Client,
 	chClient *clickhouse.Client,
+	esClient *es.Client,
 	geoEnricher *enrichment.GeoIPEnricher,
 	cfg *config.Config,
 ) *PipelineWorker {
 	return &PipelineWorker{
 		redisClient:   redisClient,
 		chClient:      chClient,
+		esClient:      esClient,
 		geoEnricher:   geoEnricher,
 		streamName:    cfg.Redis.StreamName,
 		consumerGroup: cfg.Analytics.ConsumerGroup,
@@ -109,6 +129,7 @@ func registerLifecycle(
 type PipelineWorker struct {
 	redisClient   *redis.Client
 	chClient      *clickhouse.Client
+	esClient      *es.Client
 	geoEnricher   *enrichment.GeoIPEnricher
 	streamName    string
 	consumerGroup string
@@ -176,6 +197,33 @@ func (w *PipelineWorker) processBatch(ctx context.Context, log *logger.Logger) e
 
 	if err := w.chClient.InsertClickEvents(ctx, clickEvents); err != nil {
 		return fmt.Errorf("failed to insert events to ClickHouse: %w", err)
+	}
+
+	if w.esClient != nil {
+		esDocs := make([]es.ClickEventDocument, len(clickEvents))
+		for i, ce := range clickEvents {
+			esDocs[i] = es.ClickEventDocument{
+				EventID:     ce.EventID,
+				ShortCode:   ce.ShortCode,
+				OriginalURL: ce.OriginalURL,
+				ClickedAt:   ce.ClickedAt,
+				IPAddress:   ce.IPAddress,
+				Country:     ce.Country,
+				CountryCode: ce.CountryCode,
+				Region:      ce.Region,
+				City:        ce.City,
+				Latitude:    ce.Latitude,
+				Longitude:   ce.Longitude,
+				UserAgent:   ce.UserAgent,
+				Browser:     ce.Browser,
+				OS:          ce.OS,
+				DeviceType:  ce.DeviceType,
+				Referer:     ce.Referer,
+			}
+		}
+		if err := w.esClient.IndexClickEventsBulk(ctx, esDocs); err != nil {
+			log.Error("Failed to index click events to ES: %v", err)
+		}
 	}
 
 	for _, msgID := range messageIDs {
@@ -265,6 +313,7 @@ func main() {
 			provideLogger,
 			provideRedisClient,
 			provideClickHouseClient,
+			provideESClient,
 			provideGeoEnricher,
 			providePipelineWorker,
 		),
