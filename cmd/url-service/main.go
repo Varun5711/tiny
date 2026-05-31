@@ -13,69 +13,118 @@ import (
 	"github.com/Varun5711/shorternit/internal/service"
 	"github.com/Varun5711/shorternit/internal/storage"
 	pb "github.com/Varun5711/shorternit/proto/url"
+	redislib "github.com/redis/go-redis/v9"
+	"go.uber.org/fx"
 	"google.golang.org/grpc"
 )
 
-func main() {
-	log := logger.New("url-service")
+func provideConfig() (*config.Config, error) {
+	return config.Load()
+}
 
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatal("Failed to load config: %v", err)
-	}
+func provideLogger() *logger.Logger {
+	return logger.New("url-service")
+}
 
-	idGen, err := idgen.NewGenerator(cfg.Snowflake.DatacenterID, cfg.Snowflake.WorkerID)
-	if err != nil {
-		log.Fatal("Failed to create ID generator: %v", err)
-	}
-
-	ctx := context.Background()
-
-	redisClient, err := redis.NewRedisClient(ctx, redis.Config{
+func provideRedisClient(cfg *config.Config) (*redis.RedisClient, error) {
+	return redis.NewRedisClient(context.Background(), redis.Config{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-	if err != nil {
-		log.Fatal("Failed to connect to Redis: %v", err)
-	}
-	defer redisClient.Close()
+}
 
-	urlCache := cache.NewMultiTierCache(
-		cfg.Cache.L1Capacity,
-		redisClient.GetClient(),
-		cfg.Cache.L2TTL,
-	)
-
-	dbConfig := database.Config{
+func provideDBManager(cfg *config.Config) (*database.DBManager, error) {
+	return database.NewDBManager(context.Background(), database.Config{
 		PrimaryDSN:      cfg.Database.PrimaryDSN,
 		ReplicaDSNs:     cfg.Database.ReplicaDSNs,
 		MaxConns:        cfg.Database.MaxConns,
 		MinConns:        cfg.Database.MinConns,
 		MaxConnLifetime: cfg.Database.MaxConnLifetime,
 		MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
-	}
+	})
+}
 
-	dbManager, err := database.NewDBManager(ctx, dbConfig)
-	if err != nil {
-		log.Fatal("Failed to connect to database: %v", err)
-	}
-	defer dbManager.Close()
+func provideIDGenerator(cfg *config.Config) (*idgen.Generator, error) {
+	return idgen.NewGenerator(cfg.Snowflake.DatacenterID, cfg.Snowflake.WorkerID)
+}
 
-	store := storage.NewPostgresStorage(dbManager)
-	urlService := service.NewURLService(store, idGen, urlCache, redisClient.GetClient(), cfg.Services.BaseURL, cfg.Services.DefaultURLTTL)
+func provideRawRedisClient(rc *redis.RedisClient) *redislib.Client {
+	return rc.GetClient()
+}
 
-	grpcServer := grpc.NewServer()
+func provideCache(cfg *config.Config, rc *redislib.Client) *cache.Cache {
+	return cache.NewMultiTierCache(cfg.Cache.L1Capacity, rc, cfg.Cache.L2TTL)
+}
+
+func provideStorage(db *database.DBManager) *storage.PostgresStorage {
+	return storage.NewPostgresStorage(db)
+}
+
+func provideURLService(
+	store *storage.PostgresStorage,
+	idGen *idgen.Generator,
+	urlCache *cache.Cache,
+	rc *redislib.Client,
+	cfg *config.Config,
+) *service.URLService {
+	return service.NewURLService(store, idGen, urlCache, rc, cfg.Services.BaseURL, cfg.Services.DefaultURLTTL)
+}
+
+func provideGRPCServer() *grpc.Server {
+	return grpc.NewServer()
+}
+
+func provideListener() (net.Listener, error) {
+	return net.Listen("tcp", ":50051")
+}
+
+func registerLifecycle(
+	lc fx.Lifecycle,
+	grpcServer *grpc.Server,
+	urlService *service.URLService,
+	listener net.Listener,
+	redisClient *redis.RedisClient,
+	dbManager *database.DBManager,
+	log *logger.Logger,
+) {
 	pb.RegisterURLServiceServer(grpcServer, urlService)
 
-	listener, err := net.Listen("tcp", ":50051")
-	if err != nil {
-		log.Fatal("Failed to listen on :50051: %v", err)
-	}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			log.Info("Listening on :50051")
+			go func() {
+				if err := grpcServer.Serve(listener); err != nil {
+					log.Error("Server error: %v", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			log.Info("Shutting down url-service...")
+			grpcServer.GracefulStop()
+			redisClient.Close()
+			dbManager.Close()
+			return nil
+		},
+	})
+}
 
-	log.Info("Listening on :50051")
-
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Server error: %v", err)
-	}
+func main() {
+	fx.New(
+		fx.Provide(
+			provideConfig,
+			provideLogger,
+			provideRedisClient,
+			provideDBManager,
+			provideIDGenerator,
+			provideRawRedisClient,
+			provideCache,
+			provideStorage,
+			provideURLService,
+			provideGRPCServer,
+			provideListener,
+		),
+		fx.Invoke(registerLifecycle),
+	).Run()
 }

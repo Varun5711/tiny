@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Varun5711/shorternit/internal/analytics"
 	"github.com/Varun5711/shorternit/internal/clickhouse"
@@ -15,92 +17,130 @@ import (
 	"github.com/Varun5711/shorternit/internal/middleware"
 	"github.com/Varun5711/shorternit/internal/redis"
 	userpb "github.com/Varun5711/shorternit/proto/user"
+	redislib "github.com/redis/go-redis/v9"
+	"go.uber.org/fx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func main() {
-	log := logger.New("api-gateway")
+// ---------------------------------------------------------------------------
+// Provider functions — infrastructure
+// ---------------------------------------------------------------------------
 
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatal("Failed to load config: %v", err)
-	}
+func provideConfig() (*config.Config, error) {
+	return config.Load()
+}
 
-	ctx := context.Background()
+func provideLogger() *logger.Logger {
+	return logger.New("api-gateway")
+}
 
-	redisClient, err := redis.NewRedisClient(ctx, redis.Config{
+func provideRedisClient(cfg *config.Config) (*redis.RedisClient, error) {
+	return redis.NewRedisClient(context.Background(), redis.Config{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-	if err != nil {
-		log.Fatal("Failed to connect to Redis: %v", err)
-	}
-	defer redisClient.Close()
+}
 
-	dbConfig := database.Config{
+func provideDBManager(cfg *config.Config) (*database.DBManager, error) {
+	return database.NewDBManager(context.Background(), database.Config{
 		PrimaryDSN:      cfg.Database.PrimaryDSN,
 		ReplicaDSNs:     cfg.Database.ReplicaDSNs,
 		MaxConns:        cfg.Database.MaxConns,
 		MinConns:        cfg.Database.MinConns,
 		MaxConnLifetime: cfg.Database.MaxConnLifetime,
 		MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
+	})
+}
+
+func provideClickHouseClient(cfg *config.Config) (*clickhouse.Client, error) {
+	return clickhouse.NewClient(cfg.ClickHouse)
+}
+
+func provideUserGRPCConn() (*grpc.ClientConn, error) {
+	addr := os.Getenv("USER_SERVICE_ADDR")
+	if addr == "" {
+		addr = "localhost:50052"
 	}
+	return grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+}
 
-	dbManager, err := database.NewDBManager(ctx, dbConfig)
-	if err != nil {
-		log.Fatal("Failed to connect to database: %v", err)
-	}
-	defer dbManager.Close()
+func provideRawRedisClient(rc *redis.RedisClient) *redislib.Client {
+	return rc.GetClient()
+}
 
-	httpHandler, err := handlers.NewHTTPHandler(cfg.Services.URLServiceAddr, cfg.Services.BaseURL)
-	if err != nil {
-		log.Fatal("Failed to connect to url-service: %v", err)
-	}
+// ---------------------------------------------------------------------------
+// Provider functions — gRPC clients
+// ---------------------------------------------------------------------------
 
-	userServiceAddr := os.Getenv("USER_SERVICE_ADDR")
-	if userServiceAddr == "" {
-		userServiceAddr = "localhost:50052"
-	}
+func provideUserServiceClient(conn *grpc.ClientConn) userpb.UserServiceClient {
+	return userpb.NewUserServiceClient(conn)
+}
 
-	userConn, err := grpc.Dial(userServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatal("Failed to connect to user-service: %v", err)
-	}
-	defer userConn.Close()
+// ---------------------------------------------------------------------------
+// Provider functions — handlers & middleware
+// ---------------------------------------------------------------------------
 
-	userClient := userpb.NewUserServiceClient(userConn)
-	authHandler := handlers.NewAuthHandler(userClient)
-	authMiddleware := middleware.NewAuthMiddleware(userClient)
+func provideHTTPHandler(cfg *config.Config) (*handlers.HTTPHandler, error) {
+	return handlers.NewHTTPHandler(cfg.Services.URLServiceAddr, cfg.Services.BaseURL)
+}
 
-	clickhouseClient, err := clickhouse.NewClient(cfg.ClickHouse)
-	if err != nil {
-		log.Fatal("Failed to connect to ClickHouse: %v", err)
-	}
-	defer clickhouseClient.Close()
+func provideAuthHandler(userClient userpb.UserServiceClient) *handlers.AuthHandler {
+	return handlers.NewAuthHandler(userClient)
+}
 
-	analyticsService := analytics.NewService(dbManager)
-	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService, clickhouseClient)
+func provideAnalyticsService(db *database.DBManager) *analytics.Service {
+	return analytics.NewService(db)
+}
 
-	rateLimiter := middleware.NewRateLimiter(
-		redisClient.GetClient(),
-		cfg.RateLimit.Requests,
-		cfg.RateLimit.Window,
-	)
+func provideAnalyticsHandler(svc *analytics.Service, ch *clickhouse.Client) *handlers.AnalyticsHandler {
+	return handlers.NewAnalyticsHandler(svc, ch)
+}
 
+func provideAuthMiddleware(userClient userpb.UserServiceClient) *middleware.AuthMiddleware {
+	return middleware.NewAuthMiddleware(userClient)
+}
+
+func provideRateLimiter(cfg *config.Config, rc *redislib.Client) *middleware.RateLimiter {
+	return middleware.NewRateLimiter(rc, cfg.RateLimit.Requests, cfg.RateLimit.Window)
+}
+
+func provideSwaggerHandler() *handlers.SwaggerHandler {
+	return handlers.NewSwaggerHandler("api/openapi/api-gateway.yaml")
+}
+
+// ---------------------------------------------------------------------------
+// Provider functions — HTTP mux and server
+// ---------------------------------------------------------------------------
+
+func provideMux(
+	cfg *config.Config,
+	dbManager *database.DBManager,
+	redisClient *redis.RedisClient,
+	httpHandler *handlers.HTTPHandler,
+	authHandler *handlers.AuthHandler,
+	analyticsHandler *handlers.AnalyticsHandler,
+	authMiddleware *middleware.AuthMiddleware,
+	rateLimiter *middleware.RateLimiter,
+	swaggerHandler *handlers.SwaggerHandler,
+	log *logger.Logger,
+) *http.ServeMux {
 	mux := http.NewServeMux()
 
+	// Auth routes
 	mux.HandleFunc("/api/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/auth/login", authHandler.Login)
 	mux.HandleFunc("/api/auth/profile", authMiddleware.RequireAuth(authHandler.GetProfile))
 
+	// URL routes
 	mux.HandleFunc("/api/urls", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
+		switch r.Method {
+		case http.MethodPost:
 			authMiddleware.RequireAuth(httpHandler.CreateURL)(w, r)
-		} else if r.Method == http.MethodGet {
+		case http.MethodGet:
 			authMiddleware.RequireAuth(httpHandler.ListURLs)(w, r)
-		} else {
+		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
@@ -113,14 +153,30 @@ func main() {
 		}
 	})
 
+	// Health check — pings both DB and Redis
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		if err := dbManager.Primary().Ping(ctx); err != nil {
+			log.Error("health: DB ping failed: %v", err)
+			http.Error(w, fmt.Sprintf("DB unavailable: %v", err), http.StatusServiceUnavailable)
+			return
+		}
+
+		if err := redisClient.GetClient().Ping(ctx).Err(); err != nil {
+			log.Error("health: Redis ping failed: %v", err)
+			http.Error(w, fmt.Sprintf("Redis unavailable: %v", err), http.StatusServiceUnavailable)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
-	swaggerHandler := handlers.NewSwaggerHandler("api/openapi/api-gateway.yaml")
+	// Swagger
 	swaggerHandler.RegisterRoutes(mux)
 
+	// Analytics routes
 	mux.HandleFunc("/api/analytics/clicks", authMiddleware.RequireAuth(analyticsHandler.GetClickEvents))
 
 	mux.HandleFunc("/api/analytics/", func(w http.ResponseWriter, r *http.Request) {
@@ -141,14 +197,111 @@ func main() {
 		}
 	})
 
+	return mux
+}
+
+func provideHTTPServer(
+	cfg *config.Config,
+	mux *http.ServeMux,
+	rateLimiter *middleware.RateLimiter,
+	log *logger.Logger,
+) *http.Server {
 	handler := middleware.CORS(cfg.CORS.AllowedOrigins)(mux)
 	handler = middleware.RequestID(handler)
 	handler = middleware.Recovery(log)(handler)
 	handler = rateLimiter.Middleware(handler)
 
-	log.Info("Listening on :%s", cfg.Services.APIGatewayPort)
-
-	if err := http.ListenAndServe(":"+cfg.Services.APIGatewayPort, handler); err != nil {
-		log.Fatal("Server error: %v", err)
+	return &http.Server{
+		Addr:         ":" + cfg.Services.APIGatewayPort,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle registration
+// ---------------------------------------------------------------------------
+
+func registerLifecycle(
+	lc fx.Lifecycle,
+	server *http.Server,
+	redisClient *redis.RedisClient,
+	dbManager *database.DBManager,
+	clickhouseClient *clickhouse.Client,
+	userConn *grpc.ClientConn,
+	log *logger.Logger,
+) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			log.Info("Listening on %s", server.Addr)
+			go func() {
+				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Error("Server error: %v", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			log.Info("Shutting down server...")
+
+			if err := server.Shutdown(ctx); err != nil {
+				log.Error("Server shutdown error: %v", err)
+			}
+
+			redisClient.Close()
+			dbManager.Close()
+			clickhouseClient.Close()
+			userConn.Close()
+
+			return nil
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+func main() {
+	app := fx.New(
+		// Infrastructure providers
+		fx.Provide(
+			provideConfig,
+			provideLogger,
+			provideRedisClient,
+			provideDBManager,
+			provideClickHouseClient,
+			provideUserGRPCConn,
+			provideRawRedisClient,
+		),
+
+		// gRPC client providers
+		fx.Provide(
+			provideUserServiceClient,
+		),
+
+		// Handler & middleware providers
+		fx.Provide(
+			provideHTTPHandler,
+			provideAuthHandler,
+			provideAnalyticsService,
+			provideAnalyticsHandler,
+			provideAuthMiddleware,
+			provideRateLimiter,
+			provideSwaggerHandler,
+		),
+
+		// HTTP server providers
+		fx.Provide(
+			provideMux,
+			provideHTTPServer,
+		),
+
+		// Register lifecycle hooks
+		fx.Invoke(registerLifecycle),
+	)
+
+	app.Run()
 }
