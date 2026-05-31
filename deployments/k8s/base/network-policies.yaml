@@ -1,0 +1,217 @@
+# Network policies for the shorternit namespace.
+# Each policy restricts ingress/egress to only the required communication paths.
+---
+# Allow all pods to reach kube-dns for DNS resolution
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: shorternit
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# api-gateway: ingress from any, egress to url-service, user-service, redis, postgres, clickhouse, elasticsearch
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-policy
+  namespace: shorternit
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: url-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+    - to:
+        - podSelector:
+            matchLabels:
+              app: clickhouse
+    - to:
+        - podSelector:
+            matchLabels:
+              app: elasticsearch
+---
+# url-service: ingress from api-gateway + redirect-service, egress to postgres, redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: url-service-policy
+  namespace: shorternit
+spec:
+  podSelector:
+    matchLabels:
+      app: url-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redirect-service
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+---
+# redirect-service: ingress from any (edge), egress to url-service, redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redirect-service-policy
+  namespace: shorternit
+spec:
+  podSelector:
+    matchLabels:
+      app: redirect-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: url-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+---
+# analytics-worker: egress to redis, postgres, clickhouse, elasticsearch only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: analytics-worker-policy
+  namespace: shorternit
+spec:
+  podSelector:
+    matchLabels:
+      app: analytics-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+    - to:
+        - podSelector:
+            matchLabels:
+              app: clickhouse
+    - to:
+        - podSelector:
+            matchLabels:
+              app: elasticsearch
+---
+# pipeline-worker: egress to redis, postgres, clickhouse, elasticsearch only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pipeline-worker-policy
+  namespace: shorternit
+spec:
+  podSelector:
+    matchLabels:
+      app: pipeline-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+    - to:
+        - podSelector:
+            matchLabels:
+              app: clickhouse
+    - to:
+        - podSelector:
+            matchLabels:
+              app: elasticsearch
+---
+# cleanup-worker: egress to redis, postgres, clickhouse, elasticsearch only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cleanup-worker-policy
+  namespace: shorternit
+spec:
+  podSelector:
+    matchLabels:
+      app: cleanup-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+    - to:
+        - podSelector:
+            matchLabels:
+              app: clickhouse
+    - to:
+        - podSelector:
+            matchLabels:
+              app: elasticsearch

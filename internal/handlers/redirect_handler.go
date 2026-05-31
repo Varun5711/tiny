@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -42,7 +41,7 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ctx := context.Background()
+	ctx := r.Context()
 	var longURL string
 
 	cacheKey := "url:" + shortCode

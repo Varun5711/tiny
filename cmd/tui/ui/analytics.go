@@ -80,7 +80,7 @@ func fetchClickEventsCmd(token string) tea.Cmd {
 		if err != nil {
 			return clickEventsErrorMsg{err: err}
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)

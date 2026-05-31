@@ -28,7 +28,7 @@ spec:
       containers:
         - name: redirect-service
           image: ghcr.io/varun5711/tiny-redirect-service:latest
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
               name: http
@@ -38,6 +38,13 @@ spec:
                 name: tiny-url-config
             - secretRef:
                 name: tiny-url-secrets
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           resources:
             requests:
               cpu: "500m"

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Varun5711/shorternit/internal/cache"
+	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	"github.com/Varun5711/shorternit/internal/idgen"
 	"github.com/Varun5711/shorternit/internal/lock"
 	"github.com/Varun5711/shorternit/internal/models"
@@ -25,16 +26,18 @@ type URLService struct {
 	idGen       *idgen.Generator
 	cache       *cache.Cache
 	redisClient *redis.Client
+	esClient    *es.Client
 	baseURL     string
 	defaultTTL  time.Duration
 }
 
-func NewURLService(store storage.Storage, idGen *idgen.Generator, urlCache *cache.Cache, redisClient *redis.Client, baseURL string, defaultTTL time.Duration) *URLService {
+func NewURLService(store storage.Storage, idGen *idgen.Generator, urlCache *cache.Cache, redisClient *redis.Client, esClient *es.Client, baseURL string, defaultTTL time.Duration) *URLService {
 	return &URLService{
 		store:       store,
 		idGen:       idGen,
 		cache:       urlCache,
 		redisClient: redisClient,
+		esClient:    esClient,
 		baseURL:     baseURL,
 		defaultTTL:  defaultTTL,
 	}
@@ -78,8 +81,19 @@ func (s *URLService) CreateURL(ctx context.Context, req *pb.CreateURLRequest) (*
 		UserID:    req.UserId,
 	}
 
-	if err := s.store.Save(url); err != nil {
+	if err := s.store.Save(ctx, url); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to save URL: %v", err)
+	}
+
+	if s.esClient != nil {
+		_ = s.esClient.IndexURL(ctx, es.URLDocument{
+			ShortCode: shortCode,
+			LongURL:   req.LongUrl,
+			UserID:    req.UserId,
+			CreatedAt: createdAt,
+			ExpiresAt: expiresAt,
+			Clicks:    0,
+		})
 	}
 
 	cacheKey := "url:" + shortCode
@@ -105,7 +119,7 @@ func (s *URLService) GetURL(ctx context.Context, req *pb.GetURLRequest) (*pb.Get
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
 	}
 
-	url, err := s.store.GetByShortCode(req.ShortCode)
+	url, err := s.store.GetByShortCode(ctx, req.ShortCode)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get URL: %v", err)
 	}
@@ -146,36 +160,20 @@ func (s *URLService) ListURLs(ctx context.Context, req *pb.ListURLsRequest) (*pb
 		offset = 0
 	}
 
-	var allURLs []*models.URL
+	var urls []*models.URL
+	var total int32
 	var err error
 
 	if req.UserId != "" {
-		allURLs, err = s.store.ListByUserID(req.UserId)
+		urls, total, err = s.store.ListByUserIDPaginated(ctx, req.UserId, limit, offset)
 	} else {
-		allURLs, err = s.store.List()
+		urls, total, err = s.store.ListPaginated(ctx, limit, offset)
 	}
 
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list URLs: %v", err)
 	}
 
-	total := int32(len(allURLs))
-	start := int(offset)
-	end := int(offset + limit)
-
-	if start >= len(allURLs) {
-		return &pb.ListURLsResponse{
-			Urls:    []*pb.URL{},
-			Total:   total,
-			HasMore: false,
-		}, nil
-	}
-
-	if end > len(allURLs) {
-		end = len(allURLs)
-	}
-
-	urls := allURLs[start:end]
 	pbURLs := make([]*pb.URL, len(urls))
 	for i, url := range urls {
 		var expiresAtUnix int64
@@ -195,7 +193,7 @@ func (s *URLService) ListURLs(ctx context.Context, req *pb.ListURLsRequest) (*pb
 		}
 	}
 
-	hasMore := end < len(allURLs)
+	hasMore := (offset + limit) < total
 
 	return &pb.ListURLsResponse{
 		Urls:    pbURLs,
@@ -209,15 +207,15 @@ func (s *URLService) DeleteURL(ctx context.Context, req *pb.DeleteURLRequest) (*
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
 	}
 
-	url, err := s.store.GetByShortCode(req.ShortCode)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get URL: %v", err)
+	if err := s.store.Delete(ctx, req.ShortCode); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return &pb.DeleteURLResponse{Success: false}, nil
+		}
+		return nil, status.Errorf(codes.Internal, "failed to delete URL: %v", err)
 	}
 
-	if url == nil {
-		return &pb.DeleteURLResponse{
-			Success: false,
-		}, nil
+	if s.esClient != nil {
+		_ = s.esClient.DeleteURL(ctx, req.ShortCode)
 	}
 
 	cacheKey := "url:" + req.ShortCode
@@ -233,11 +231,11 @@ func (s *URLService) IncrementClicks(ctx context.Context, req *pb.IncrementClick
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
 	}
 
-	if err := s.store.IncrementClicks(req.ShortCode); err != nil {
+	if err := s.store.IncrementClicks(ctx, req.ShortCode); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to increment clicks: %v", err)
 	}
 
-	url, err := s.store.GetByShortCode(req.ShortCode)
+	url, err := s.store.GetByShortCode(ctx, req.ShortCode)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get URL: %v", err)
 	}
@@ -312,7 +310,7 @@ func (s *URLService) createCustomURLInternal(ctx context.Context, alias, longURL
 	if !acquired {
 		return nil, fmt.Errorf("alias is being claimed by another request, please try again")
 	}
-	defer distributedLock.Release(ctx)
+	defer func() { _ = distributedLock.Release(ctx) }()
 
 	postgresStore, ok := s.store.(*storage.PostgresStorage)
 	if !ok {
@@ -359,7 +357,7 @@ type CreateURLResult struct {
 }
 
 func (s *URLService) getQRCode(ctx context.Context, shortCode string) (string, error) {
-	url, err := s.store.GetByShortCode(shortCode)
+	url, err := s.store.GetByShortCode(ctx, shortCode)
 	if err != nil || url == nil {
 		return "", err
 	}

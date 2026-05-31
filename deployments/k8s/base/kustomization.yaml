@@ -34,7 +34,11 @@ resources:
   - pipeline-worker/hpa.yaml
   - cleanup-worker/cronjob.yaml
 
+  - elasticsearch/statefulset.yaml
+  - jaeger/deployment.yaml
+
   - ingress.yaml
+  - network-policies.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: tiny-url

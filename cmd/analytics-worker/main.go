@@ -2,101 +2,141 @@ package main
 
 import (
 	"context"
-	"os"
-	"os/signal"
-	"syscall"
+	"sync"
 	"time"
 
 	"github.com/Varun5711/shorternit/internal/config"
 	"github.com/Varun5711/shorternit/internal/database"
 	"github.com/Varun5711/shorternit/internal/logger"
 	"github.com/Varun5711/shorternit/internal/redis"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	redislib "github.com/redis/go-redis/v9"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/fx"
 )
 
-var (
-	log           *logger.Logger
-	streamName    string
-	consumerGroup string
-	consumerName  string
-	batchSize     int
-	pollInterval  time.Duration
-	blockTime     time.Duration
-)
+type WorkerParams struct {
+	StreamName    string
+	ConsumerGroup string
+	ConsumerName  string
+	BatchSize     int
+	PollInterval  time.Duration
+	BlockTime     time.Duration
+}
 
-func main() {
-	log = logger.New("analytics-worker")
+func provideConfig() (*config.Config, error) {
+	return config.Load()
+}
 
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatal("Failed to load config: %v", err)
-	}
+func provideLogger() *logger.Logger {
+	return logger.New("analytics-worker")
+}
 
-	streamName = cfg.Redis.StreamName
-	consumerGroup = cfg.Analytics.ConsumerGroup
-	consumerName = cfg.Analytics.ConsumerName
-	batchSize = cfg.Analytics.BatchSize
-	pollInterval = cfg.Analytics.PollInterval
-	blockTime = cfg.Analytics.BlockTime
-
-	ctx := context.Background()
-
-	redisClient, err := redis.NewRedisClient(ctx, redis.Config{
+func provideRedisClient(cfg *config.Config) (*redis.RedisClient, error) {
+	return redis.NewRedisClient(context.Background(), redis.Config{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-	if err != nil {
-		log.Fatal("Failed to connect to Redis: %v", err)
-	}
-	defer redisClient.Close()
+}
 
-	dbConfig := database.Config{
+func provideDBManager(cfg *config.Config) (*database.DBManager, error) {
+	return database.NewDBManager(context.Background(), database.Config{
 		PrimaryDSN:      cfg.Database.PrimaryDSN,
 		ReplicaDSNs:     cfg.Database.ReplicaDSNs,
 		MaxConns:        cfg.Database.MaxConns,
 		MinConns:        cfg.Database.MinConns,
 		MaxConnLifetime: cfg.Database.MaxConnLifetime,
 		MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
-	}
-
-	dbManager, err := database.NewDBManager(ctx, dbConfig)
-	if err != nil {
-		log.Fatal("Failed to connect to database: %v", err)
-	}
-	defer dbManager.Close()
-
-	err = redisClient.GetClient().XGroupCreateMkStream(ctx, streamName, consumerGroup, "0").Err()
-	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
-		log.Fatal("Failed to create consumer group: %v", err)
-	}
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	log.Info("Processing click events")
-	go processEvents(ctx, redisClient.GetClient(), dbManager)
-
-	<-sigChan
-	log.Info("Shutting down")
+	})
 }
 
-func processEvents(ctx context.Context, client *redislib.Client, dbManager *database.DBManager) {
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "analytics-worker",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
+}
+
+func provideWorkerParams(cfg *config.Config) WorkerParams {
+	return WorkerParams{
+		StreamName:    cfg.Redis.StreamName,
+		ConsumerGroup: cfg.Analytics.ConsumerGroup,
+		ConsumerName:  cfg.Analytics.ConsumerName,
+		BatchSize:     cfg.Analytics.BatchSize,
+		PollInterval:  cfg.Analytics.PollInterval,
+		BlockTime:     cfg.Analytics.BlockTime,
+	}
+}
+
+func registerLifecycle(
+	lc fx.Lifecycle,
+	redisClient *redis.RedisClient,
+	tp *sdktrace.TracerProvider,
+	dbManager *database.DBManager,
+	params WorkerParams,
+	log *logger.Logger,
+) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			client := redisClient.GetClient()
+			err := client.XGroupCreateMkStream(ctx, params.StreamName, params.ConsumerGroup, "0").Err()
+			if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
+				return err
+			}
+
+			workerCtx, cancel := context.WithCancel(context.Background())
+			var wg sync.WaitGroup
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+				processEvents(workerCtx, client, dbManager, params, log)
+			}()
+
+			log.Info("Processing click events")
+
+			lc.Append(fx.Hook{
+				OnStop: func(ctx context.Context) error {
+					log.Info("Shutting down analytics-worker...")
+					cancel()
+					wg.Wait()
+					_ = tracing.ShutdownTracer(ctx, tp)
+					_ = redisClient.Close()
+					dbManager.Close()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
+}
+
+func processEvents(ctx context.Context, client *redislib.Client, dbManager *database.DBManager, params WorkerParams, log *logger.Logger) {
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		messages, err := client.XReadGroup(ctx, &redislib.XReadGroupArgs{
-			Group:    consumerGroup,
-			Consumer: consumerName,
-			Streams:  []string{streamName, ">"},
-			Count:    int64(batchSize),
-			Block:    blockTime,
+			Group:    params.ConsumerGroup,
+			Consumer: params.ConsumerName,
+			Streams:  []string{params.StreamName, ">"},
+			Count:    int64(params.BatchSize),
+			Block:    params.BlockTime,
 		}).Result()
 
 		if err != nil {
-			if err == redislib.Nil {
+			if err == redislib.Nil || ctx.Err() != nil {
 				continue
 			}
 			log.Error("Failed to read from stream: %v", err)
-			time.Sleep(pollInterval)
+			time.Sleep(params.PollInterval)
 			continue
 		}
 
@@ -114,7 +154,6 @@ func processEvents(ctx context.Context, client *redislib.Client, dbManager *data
 					log.Warn("Invalid message format: %v", msg.ID)
 					continue
 				}
-
 				clickCounts[shortCode]++
 				messageIDs = append(messageIDs, msg.ID)
 			}
@@ -128,7 +167,7 @@ func processEvents(ctx context.Context, client *redislib.Client, dbManager *data
 			}
 
 			if len(messageIDs) > 0 {
-				if err := acknowledgeMessages(ctx, client, messageIDs); err != nil {
+				if err := client.XAck(ctx, params.StreamName, params.ConsumerGroup, messageIDs...).Err(); err != nil {
 					log.Error("Failed to acknowledge messages: %v", err)
 				}
 			}
@@ -141,24 +180,31 @@ func updateClickCounts(ctx context.Context, dbManager *database.DBManager, click
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	for shortCode, count := range clickCounts {
-		query := `
+		_, err := tx.Exec(ctx, `
 			UPDATE urls
-			SET clicks = clicks + $1,
-			    updated_at = NOW()
+			SET clicks = clicks + $1, updated_at = NOW()
 			WHERE short_code = $2
-		`
-		_, err := tx.Exec(ctx, query, count, shortCode)
+		`, count, shortCode)
 		if err != nil {
 			return err
 		}
 	}
-
 	return tx.Commit(ctx)
 }
 
-func acknowledgeMessages(ctx context.Context, client *redislib.Client, messageIDs []string) error {
-	return client.XAck(ctx, streamName, consumerGroup, messageIDs...).Err()
+func main() {
+	fx.New(
+		fx.Provide(
+			provideConfig,
+			provideLogger,
+			provideTracerProvider,
+			provideRedisClient,
+			provideDBManager,
+			provideWorkerParams,
+		),
+		fx.Invoke(registerLifecycle),
+	).Run()
 }

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
+	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	grpcClient "github.com/Varun5711/shorternit/internal/grpc"
 	"github.com/Varun5711/shorternit/internal/middleware"
 	"github.com/Varun5711/shorternit/internal/models"
@@ -15,10 +17,11 @@ import (
 
 type HTTPHandler struct {
 	grpcClient pb.URLServiceClient
+	esClient   *es.Client
 	baseURL    string
 }
 
-func NewHTTPHandler(urlServiceAddr string, baseURL string) (*HTTPHandler, error) {
+func NewHTTPHandler(urlServiceAddr string, baseURL string, esClient *es.Client) (*HTTPHandler, error) {
 	client, err := grpcClient.NewURLServiceClient(urlServiceAddr)
 	if err != nil {
 		return nil, err
@@ -26,11 +29,13 @@ func NewHTTPHandler(urlServiceAddr string, baseURL string) (*HTTPHandler, error)
 
 	return &HTTPHandler{
 		grpcClient: client,
+		esClient:   esClient,
 		baseURL:    baseURL,
 	}, nil
 }
 
 func (h *HTTPHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req models.CreateURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
@@ -131,7 +136,7 @@ func (h *HTTPHandler) ListURLs(w http.ResponseWriter, r *http.Request) {
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func respondError(w http.ResponseWriter, status int, message string) {
@@ -143,6 +148,7 @@ func respondError(w http.ResponseWriter, status int, message string) {
 }
 
 func (h *HTTPHandler) CreateCustomURL(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req models.CreateCustomURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
@@ -207,6 +213,41 @@ func (h *HTTPHandler) CreateCustomURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, res)
+}
+
+func (h *HTTPHandler) SearchURLs(w http.ResponseWriter, r *http.Request) {
+	if h.esClient == nil {
+		respondError(w, http.StatusServiceUnavailable, "search is not available")
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		respondError(w, http.StatusBadRequest, "query parameter 'q' is required")
+		return
+	}
+
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	offset := 0
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	result, err := h.esClient.SearchURLs(r.Context(), query, limit, offset)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 func isValidURL(str string) bool {

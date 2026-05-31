@@ -1,157 +1,107 @@
 package logger
 
 import (
-	"fmt"
-	"io"
-	"log"
 	"os"
 	"strings"
-	"time"
-)
 
-type Level int
-
-const (
-	DEBUG Level = iota
-	INFO
-	WARN
-	ERROR
-	FATAL
-)
-
-var (
-	levelNames = map[Level]string{
-		DEBUG: "DEBUG",
-		INFO:  "INFO",
-		WARN:  "WARN",
-		ERROR: "ERROR",
-		FATAL: "FATAL",
-	}
-
-	levelColors = map[Level]string{
-		DEBUG: "\033[36m",
-		INFO:  "\033[32m",
-		WARN:  "\033[33m",
-		ERROR: "\033[31m",
-		FATAL: "\033[35m",
-	}
-
-	reset = "\033[0m"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type Logger struct {
-	level      Level
-	out        io.Writer
-	service    string
-	useColors  bool
-	showTime   bool
-	showCaller bool
+	zap     *zap.Logger
+	sugar   *zap.SugaredLogger
+	service string
 }
 
 func New(service string) *Logger {
-	level := INFO
-	if envLevel := os.Getenv("LOG_LEVEL"); envLevel != "" {
-		switch strings.ToUpper(envLevel) {
-		case "DEBUG":
-			level = DEBUG
-		case "INFO":
-			level = INFO
-		case "WARN":
-			level = WARN
-		case "ERROR":
-			level = ERROR
-		case "FATAL":
-			level = FATAL
-		}
+	return newLogger(service, nil)
+}
+
+func NewWithSyncer(service string, extraSyncer zapcore.WriteSyncer) *Logger {
+	return newLogger(service, extraSyncer)
+}
+
+func newLogger(service string, extraSyncer zapcore.WriteSyncer) *Logger {
+	var level zapcore.Level
+	envLevel := os.Getenv("LOG_LEVEL")
+	switch strings.ToUpper(envLevel) {
+	case "DEBUG":
+		level = zap.DebugLevel
+	case "WARN":
+		level = zap.WarnLevel
+	case "ERROR":
+		level = zap.ErrorLevel
+	default:
+		level = zap.InfoLevel
 	}
 
-	useColors := os.Getenv("LOG_COLORS") != "false"
+	var encoder zapcore.Encoder
+	format := os.Getenv("LOG_FORMAT")
+	if strings.ToLower(format) == "text" {
+		encCfg := zap.NewDevelopmentEncoderConfig()
+		encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		encoder = zapcore.NewConsoleEncoder(encCfg)
+	} else {
+		encCfg := zap.NewProductionEncoderConfig()
+		encCfg.TimeKey = "timestamp"
+		encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		encoder = zapcore.NewJSONEncoder(encCfg)
+	}
+
+	cores := []zapcore.Core{
+		zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level),
+	}
+
+	if extraSyncer != nil {
+		jsonEnc := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+		cores = append(cores, zapcore.NewCore(jsonEnc, extraSyncer, level))
+	}
+
+	core := zapcore.NewTee(cores...)
+	z := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+	z = z.With(zap.String("service", service))
 
 	return &Logger{
-		level:      level,
-		out:        os.Stdout,
-		service:    service,
-		useColors:  useColors,
-		showTime:   true,
-		showCaller: false,
+		zap:     z,
+		sugar:   z.Sugar(),
+		service: service,
 	}
 }
 
-func (l *Logger) log(level Level, format string, args ...interface{}) {
-	if level < l.level {
-		return
-	}
-
-	var buf strings.Builder
-
-	if l.showTime {
-		buf.WriteString(time.Now().Format("15:04:05"))
-		buf.WriteString(" ")
-	}
-
-	if l.useColors {
-		buf.WriteString(levelColors[level])
-	}
-	buf.WriteString(fmt.Sprintf("%-5s", levelNames[level]))
-	if l.useColors {
-		buf.WriteString(reset)
-	}
-	buf.WriteString(" ")
-
-	if l.service != "" {
-		if l.useColors {
-			buf.WriteString("\033[90m")
-		}
-		buf.WriteString("[")
-		buf.WriteString(l.service)
-		buf.WriteString("]")
-		if l.useColors {
-			buf.WriteString(reset)
-		}
-		buf.WriteString(" ")
-	}
-
-	msg := fmt.Sprintf(format, args...)
-	buf.WriteString(msg)
-
-	fmt.Fprintln(l.out, buf.String())
-
-	if level == FATAL {
-		os.Exit(1)
+func (l *Logger) With(key string, value interface{}) *Logger {
+	newZap := l.zap.With(zap.Any(key, value))
+	return &Logger{
+		zap:     newZap,
+		sugar:   newZap.Sugar(),
+		service: l.service,
 	}
 }
 
 func (l *Logger) Debug(format string, args ...interface{}) {
-	l.log(DEBUG, format, args...)
+	l.sugar.Debugf(format, args...)
 }
 
 func (l *Logger) Info(format string, args ...interface{}) {
-	l.log(INFO, format, args...)
+	l.sugar.Infof(format, args...)
 }
 
 func (l *Logger) Warn(format string, args ...interface{}) {
-	l.log(WARN, format, args...)
+	l.sugar.Warnf(format, args...)
 }
 
 func (l *Logger) Error(format string, args ...interface{}) {
-	l.log(ERROR, format, args...)
+	l.sugar.Errorf(format, args...)
 }
 
 func (l *Logger) Fatal(format string, args ...interface{}) {
-	l.log(FATAL, format, args...)
+	l.sugar.Fatalf(format, args...)
 }
 
-func (l *Logger) SetStdLog() {
-	log.SetOutput(&stdLogWriter{logger: l})
-	log.SetFlags(0)
+func (l *Logger) Sync() error {
+	return l.zap.Sync()
 }
 
-type stdLogWriter struct {
-	logger *Logger
-}
-
-func (w *stdLogWriter) Write(p []byte) (n int, err error) {
-	msg := strings.TrimSpace(string(p))
-	w.logger.Info(msg)
-	return len(p), nil
+func (l *Logger) Zap() *zap.Logger {
+	return l.zap
 }
