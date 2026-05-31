@@ -26,12 +26,19 @@ spec:
           containers:
             - name: cleanup-worker
               image: ghcr.io/varun5711/tiny-cleanup-worker:latest
-              imagePullPolicy: Never
+              imagePullPolicy: IfNotPresent
               envFrom:
                 - configMapRef:
                     name: tiny-url-config
                 - secretRef:
                     name: tiny-url-secrets
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65534
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
               resources:
                 requests:
                   cpu: "100m"
