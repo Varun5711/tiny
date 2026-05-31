@@ -99,7 +99,7 @@ func registerLifecycle(
 		OnStop: func(ctx context.Context) error {
 			log.Info("Shutting down user-service...")
 			grpcServer.GracefulStop()
-			tracing.ShutdownTracer(ctx, tp)
+			_ = tracing.ShutdownTracer(ctx, tp)
 			dbManager.Close()
 			return nil
 		},

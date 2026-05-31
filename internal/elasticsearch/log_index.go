@@ -132,7 +132,7 @@ func (ls *LogSyncer) Flush() {
 		buf.WriteByte('\n')
 	}
 
-	ls.client.es.Bulk(bytes.NewReader(buf.Bytes()))
+	_, _ = ls.client.es.Bulk(bytes.NewReader(buf.Bytes()))
 }
 
 func (ls *LogSyncer) Sync() error {

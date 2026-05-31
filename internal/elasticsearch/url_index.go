@@ -45,7 +45,7 @@ func (c *Client) IndexURL(ctx context.Context, doc URLDocument) error {
 	if err != nil {
 		return fmt.Errorf("failed to index URL: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.IsError() {
 		return fmt.Errorf("elasticsearch index error: %s", res.String())
@@ -83,7 +83,7 @@ func (c *Client) SearchURLs(ctx context.Context, query string, limit, offset int
 	if err != nil {
 		return nil, fmt.Errorf("failed to search URLs: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.IsError() {
 		return nil, fmt.Errorf("elasticsearch search error: %s", res.String())
@@ -126,7 +126,7 @@ func (c *Client) DeleteURL(ctx context.Context, shortCode string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete URL from index: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.IsError() && res.StatusCode != 404 {
 		return fmt.Errorf("elasticsearch delete error: %s", res.String())
@@ -157,7 +157,7 @@ func (c *Client) UpdateClicks(ctx context.Context, shortCode string, clicks int6
 	if err != nil {
 		return fmt.Errorf("failed to update clicks: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.IsError() && res.StatusCode != 404 {
 		return fmt.Errorf("elasticsearch update error: %s", res.String())

@@ -152,7 +152,7 @@ func (c *Client) GetDailyTimeSeries(ctx context.Context, shortCode string, start
 	if err != nil {
 		return nil, fmt.Errorf("failed to query daily time series: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var points []TimeSeriesPoint
 	for rows.Next() {
@@ -212,7 +212,7 @@ func (c *Client) GetTopReferrers(ctx context.Context, shortCode string, startDat
 	if err != nil {
 		return nil, fmt.Errorf("failed to query referrers: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var referrers []struct {
 		Referer    string

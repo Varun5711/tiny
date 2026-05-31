@@ -117,8 +117,8 @@ func registerLifecycle(
 			if err := server.Shutdown(ctx); err != nil {
 				log.Error("Shutdown error: %v", err)
 			}
-			tracing.ShutdownTracer(ctx, tp)
-			redisClient.Close()
+			_ = tracing.ShutdownTracer(ctx, tp)
+			_ = redisClient.Close()
 			return nil
 		},
 	})

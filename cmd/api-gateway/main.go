@@ -286,8 +286,8 @@ func registerLifecycle(
 				log.Error("Server shutdown error: %v", err)
 			}
 
-			tracing.ShutdownTracer(ctx, tp)
-			redisClient.Close()
+			_ = tracing.ShutdownTracer(ctx, tp)
+			_ = redisClient.Close()
 			dbManager.Close()
 			_ = clickhouseClient.Close()
 			if esClient != nil {

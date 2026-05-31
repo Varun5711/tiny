@@ -136,8 +136,8 @@ func registerLifecycle(
 		OnStop: func(ctx context.Context) error {
 			log.Info("Shutting down url-service...")
 			grpcServer.GracefulStop()
-			tracing.ShutdownTracer(ctx, tp)
-			redisClient.Close()
+			_ = tracing.ShutdownTracer(ctx, tp)
+			_ = redisClient.Close()
 			dbManager.Close()
 			return nil
 		},

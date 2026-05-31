@@ -164,7 +164,7 @@ func (c *Client) GetClickEvents(ctx context.Context, shortCode string, limit int
 	if err != nil {
 		return nil, fmt.Errorf("failed to query click events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []ClickEvent
 	for rows.Next() {
@@ -216,7 +216,7 @@ func (c *Client) GetAllClickEvents(ctx context.Context, limit int) ([]ClickEvent
 	if err != nil {
 		return nil, fmt.Errorf("failed to query click events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []ClickEvent
 	for rows.Next() {
