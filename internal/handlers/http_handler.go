@@ -31,6 +31,7 @@ func NewHTTPHandler(urlServiceAddr string, baseURL string) (*HTTPHandler, error)
 }
 
 func (h *HTTPHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req models.CreateURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
@@ -143,6 +144,7 @@ func respondError(w http.ResponseWriter, status int, message string) {
 }
 
 func (h *HTTPHandler) CreateCustomURL(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req models.CreateCustomURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")

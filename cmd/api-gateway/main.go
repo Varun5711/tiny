@@ -141,7 +141,7 @@ func main() {
 		}
 	})
 
-	handler := middleware.CORS(mux)
+	handler := middleware.CORS(cfg.CORS.AllowedOrigins)(mux)
 	handler = middleware.RequestID(handler)
 	handler = middleware.Recovery(log)(handler)
 	handler = rateLimiter.Middleware(handler)

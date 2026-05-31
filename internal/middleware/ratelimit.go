@@ -3,7 +3,9 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -96,15 +98,23 @@ func (rl *RateLimiter) allowRequest(ctx context.Context, key string) (bool, int,
 }
 
 func getClientIP(r *http.Request) string {
-	forwarded := r.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		return forwarded
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		ip := strings.TrimSpace(parts[0])
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
 	}
 
-	realIP := r.Header.Get("X-Real-IP")
-	if realIP != "" {
-		return realIP
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		if net.ParseIP(realIP) != nil {
+			return realIP
+		}
 	}
 
-	return r.RemoteAddr
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

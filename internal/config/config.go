@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -17,6 +18,17 @@ type Config struct {
 	Snowflake  SnowflakeConfig
 	Cache      CacheConfig
 	RateLimit  RateLimitConfig
+	CORS       CORSConfig
+	JWT        JWTConfig
+}
+
+type CORSConfig struct {
+	AllowedOrigins []string
+}
+
+type JWTConfig struct {
+	Secret        string
+	TokenDuration time.Duration
 }
 
 type DatabaseConfig struct {
@@ -130,6 +142,13 @@ func Load() (*Config, error) {
 			DatacenterID: int64(getEnvAsInt("SNOWFLAKE_DATACENTER_ID", 1)),
 			WorkerID:     int64(getEnvAsInt("SNOWFLAKE_WORKER_ID", 1)),
 		},
+		CORS: CORSConfig{
+			AllowedOrigins: getEnvAsSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+		},
+		JWT: JWTConfig{
+			Secret:        getEnv("JWT_SECRET", ""),
+			TokenDuration: getEnvAsDuration("JWT_TOKEN_DURATION", 7*24*time.Hour),
+		},
 	}
 
 	return cfg, nil
@@ -146,6 +165,22 @@ func getEnvAsInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intVal, err := strconv.Atoi(value); err == nil {
 			return intVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsSlice(key string, defaultValue []string) []string {
+	if value := os.Getenv(key); value != "" {
+		parts := strings.Split(value, ",")
+		result := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		if len(result) > 0 {
+			return result
 		}
 	}
 	return defaultValue

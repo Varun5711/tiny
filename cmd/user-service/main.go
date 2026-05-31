@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/Varun5711/shorternit/internal/auth"
 	"github.com/Varun5711/shorternit/internal/config"
@@ -42,13 +41,11 @@ func main() {
 	}
 	defer dbManager.Close()
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "your-secret-key-change-in-production"
-		log.Warn("JWT_SECRET not set, using default (insecure for production)")
+	if cfg.JWT.Secret == "" {
+		log.Fatal("JWT_SECRET must be set")
 	}
 
-	jwtManager := auth.NewJWTManager(jwtSecret, 7*24*time.Hour)
+	jwtManager := auth.NewJWTManager(cfg.JWT.Secret, cfg.JWT.TokenDuration)
 	userStorage := storage.NewUserStorage(dbManager)
 	userService := service.NewUserService(userStorage, jwtManager)
 
