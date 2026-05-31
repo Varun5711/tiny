@@ -78,7 +78,7 @@ func (s *URLService) CreateURL(ctx context.Context, req *pb.CreateURLRequest) (*
 		UserID:    req.UserId,
 	}
 
-	if err := s.store.Save(url); err != nil {
+	if err := s.store.Save(ctx, url); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to save URL: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func (s *URLService) GetURL(ctx context.Context, req *pb.GetURLRequest) (*pb.Get
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
 	}
 
-	url, err := s.store.GetByShortCode(req.ShortCode)
+	url, err := s.store.GetByShortCode(ctx, req.ShortCode)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get URL: %v", err)
 	}
@@ -150,9 +150,9 @@ func (s *URLService) ListURLs(ctx context.Context, req *pb.ListURLsRequest) (*pb
 	var err error
 
 	if req.UserId != "" {
-		allURLs, err = s.store.ListByUserID(req.UserId)
+		allURLs, err = s.store.ListByUserID(ctx, req.UserId)
 	} else {
-		allURLs, err = s.store.List()
+		allURLs, err = s.store.List(ctx)
 	}
 
 	if err != nil {
@@ -209,7 +209,7 @@ func (s *URLService) DeleteURL(ctx context.Context, req *pb.DeleteURLRequest) (*
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
 	}
 
-	url, err := s.store.GetByShortCode(req.ShortCode)
+	url, err := s.store.GetByShortCode(ctx, req.ShortCode)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get URL: %v", err)
 	}
@@ -233,11 +233,11 @@ func (s *URLService) IncrementClicks(ctx context.Context, req *pb.IncrementClick
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
 	}
 
-	if err := s.store.IncrementClicks(req.ShortCode); err != nil {
+	if err := s.store.IncrementClicks(ctx, req.ShortCode); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to increment clicks: %v", err)
 	}
 
-	url, err := s.store.GetByShortCode(req.ShortCode)
+	url, err := s.store.GetByShortCode(ctx, req.ShortCode)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get URL: %v", err)
 	}
@@ -359,7 +359,7 @@ type CreateURLResult struct {
 }
 
 func (s *URLService) getQRCode(ctx context.Context, shortCode string) (string, error) {
-	url, err := s.store.GetByShortCode(shortCode)
+	url, err := s.store.GetByShortCode(ctx, shortCode)
 	if err != nil || url == nil {
 		return "", err
 	}

@@ -22,10 +22,7 @@ func NewPostgresStorage(db *database.DBManager) *PostgresStorage {
 	}
 }
 
-func (s *PostgresStorage) Save(url *models.URL) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func (s *PostgresStorage) Save(ctx context.Context, url *models.URL) error {
 	query := `
 		INSERT INTO urls (short_code, long_url, clicks, expires_at, qr_code, user_id, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -49,10 +46,7 @@ func (s *PostgresStorage) Save(url *models.URL) error {
 	return nil
 }
 
-func (s *PostgresStorage) GetByShortCode(shortCode string) (*models.URL, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func (s *PostgresStorage) GetByShortCode(ctx context.Context, shortCode string) (*models.URL, error) {
 	query := `
 		SELECT short_code, long_url, clicks, created_at, expires_at, COALESCE(qr_code, '')
 		FROM urls
@@ -81,10 +75,7 @@ func (s *PostgresStorage) GetByShortCode(shortCode string) (*models.URL, error) 
 	return &url, nil
 }
 
-func (s *PostgresStorage) IncrementClicks(shortCode string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func (s *PostgresStorage) IncrementClicks(ctx context.Context, shortCode string) error {
 	query := `
 		UPDATE urls
 		SET clicks = clicks + 1,
@@ -104,10 +95,7 @@ func (s *PostgresStorage) IncrementClicks(shortCode string) error {
 	return nil
 }
 
-func (s *PostgresStorage) List() ([]*models.URL, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
+func (s *PostgresStorage) List(ctx context.Context) ([]*models.URL, error) {
 	query := `
 		SELECT short_code, long_url, clicks, created_at, expires_at, COALESCE(qr_code, ''), COALESCE(user_id, '')
 		FROM urls

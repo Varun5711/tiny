@@ -35,7 +35,9 @@ func NewClient(cfg config.ClickHouseConfig) (*Client, error) {
 		return nil, fmt.Errorf("failed to connect to clickhouse: %w", err)
 	}
 
-	if err := conn.Ping(context.Background()); err != nil {
+	pingCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := conn.Ping(pingCtx); err != nil {
 		return nil, fmt.Errorf("failed to ping clickhouse: %w", err)
 	}
 
