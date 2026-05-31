@@ -59,7 +59,7 @@ func (c *Client) IndexClickEvent(ctx context.Context, doc ClickEventDocument) er
 	if err != nil {
 		return fmt.Errorf("failed to index click event: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.IsError() {
 		return fmt.Errorf("elasticsearch index error: %s", res.String())
@@ -101,7 +101,7 @@ func (c *Client) IndexClickEventsBulk(ctx context.Context, docs []ClickEventDocu
 	if err != nil {
 		return fmt.Errorf("failed to bulk index click events: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.IsError() {
 		return fmt.Errorf("elasticsearch bulk index error: %s", res.String())
@@ -175,7 +175,7 @@ func (c *Client) SearchClickEvents(ctx context.Context, filters ClickSearchFilte
 	if err != nil {
 		return nil, fmt.Errorf("failed to search click events: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.IsError() {
 		return nil, fmt.Errorf("elasticsearch search error: %s", res.String())

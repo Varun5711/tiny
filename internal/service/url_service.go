@@ -310,7 +310,7 @@ func (s *URLService) createCustomURLInternal(ctx context.Context, alias, longURL
 	if !acquired {
 		return nil, fmt.Errorf("alias is being claimed by another request, please try again")
 	}
-	defer distributedLock.Release(ctx)
+	defer func() { _ = distributedLock.Release(ctx) }()
 
 	postgresStore, ok := s.store.(*storage.PostgresStorage)
 	if !ok {

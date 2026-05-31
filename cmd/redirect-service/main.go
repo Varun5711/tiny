@@ -79,7 +79,7 @@ func provideHTTPServer(
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	handler := middleware.Tracing("redirect-service")(mux)

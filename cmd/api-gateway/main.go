@@ -66,7 +66,7 @@ func provideUserGRPCConn() (*grpc.ClientConn, error) {
 	if addr == "" {
 		addr = "localhost:50052"
 	}
-	return grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	return grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 }
 
 func provideRawRedisClient(rc *redis.RedisClient) *redislib.Client {
@@ -200,7 +200,7 @@ func provideMux(
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	// Search
@@ -289,11 +289,11 @@ func registerLifecycle(
 			tracing.ShutdownTracer(ctx, tp)
 			redisClient.Close()
 			dbManager.Close()
-			clickhouseClient.Close()
+			_ = clickhouseClient.Close()
 			if esClient != nil {
-				esClient.Close()
+				_ = esClient.Close()
 			}
-			userConn.Close()
+			_ = userConn.Close()
 
 			return nil
 		},

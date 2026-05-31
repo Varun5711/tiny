@@ -55,7 +55,7 @@ func (c *Client) GetCountryStats(ctx context.Context, shortCode string, startDat
 	if err != nil {
 		return nil, fmt.Errorf("failed to query country stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stats []CountryStats
 	for rows.Next() {
@@ -90,7 +90,7 @@ func (c *Client) GetDeviceStats(ctx context.Context, shortCode string, startDate
 	if err != nil {
 		return nil, fmt.Errorf("failed to query device stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stats []DeviceStats
 	for rows.Next() {
@@ -121,7 +121,7 @@ func (c *Client) GetHourlyTimeSeries(ctx context.Context, shortCode string, star
 	if err != nil {
 		return nil, fmt.Errorf("failed to query time series: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var points []TimeSeriesPoint
 	for rows.Next() {

@@ -128,10 +128,10 @@ func registerLifecycle(
 					log.Info("Shutting down pipeline worker...")
 					cancel()
 					wg.Wait()
-					tracing.ShutdownTracer(ctx, tp)
-					geoEnricher.Close()
-					chClient.Close()
-					redisClient.Close()
+					_ = tracing.ShutdownTracer(ctx, tp)
+					_ = geoEnricher.Close()
+					_ = chClient.Close()
+					_ = redisClient.Close()
 					return nil
 				},
 			})

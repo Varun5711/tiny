@@ -78,7 +78,7 @@ func (rl *RateLimiter) allowRequest(ctx context.Context, key string) (bool, int,
 		var resetTime time.Time
 		if len(results) > 0 {
 			var oldestTimestamp int64
-			fmt.Sscanf(results[0], "%d", &oldestTimestamp)
+			_, _ = fmt.Sscanf(results[0], "%d", &oldestTimestamp)
 			resetTime = time.Unix(0, oldestTimestamp).Add(rl.window)
 		} else {
 			resetTime = now.Add(rl.window)

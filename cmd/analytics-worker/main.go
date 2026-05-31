@@ -104,8 +104,8 @@ func registerLifecycle(
 					log.Info("Shutting down analytics-worker...")
 					cancel()
 					wg.Wait()
-					tracing.ShutdownTracer(ctx, tp)
-					redisClient.Close()
+					_ = tracing.ShutdownTracer(ctx, tp)
+					_ = redisClient.Close()
 					dbManager.Close()
 					return nil
 				},
@@ -180,7 +180,7 @@ func updateClickCounts(ctx context.Context, dbManager *database.DBManager, click
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	for shortCode, count := range clickCounts {
 		_, err := tx.Exec(ctx, `

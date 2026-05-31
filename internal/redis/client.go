@@ -31,7 +31,7 @@ func NewRedisClient(ctx context.Context, cfg Config) (*RedisClient, error) {
 	})
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		rdb.Close()
+		_ = rdb.Close()
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 

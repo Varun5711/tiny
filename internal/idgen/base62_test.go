@@ -166,7 +166,7 @@ func BenchmarkDecode(b *testing.B) {
 	encoded := Encode(1234567890)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Decode(encoded)
+		_, _ = Decode(encoded)
 	}
 }
 
@@ -180,7 +180,7 @@ func BenchmarkDecodeSmall(b *testing.B) {
 	encoded := Encode(125)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Decode(encoded)
+		_, _ = Decode(encoded)
 	}
 }
 
@@ -194,6 +194,6 @@ func BenchmarkDecodeLarge(b *testing.B) {
 	encoded := Encode(9223372036854775807)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Decode(encoded)
+		_, _ = Decode(encoded)
 	}
 }

@@ -93,8 +93,8 @@ func registerLifecycle(
 					log.Info("Shutting down cleanup-worker...")
 					cancel()
 					wg.Wait()
-					tracing.ShutdownTracer(ctx, tp)
-					redisClient.Close()
+					_ = tracing.ShutdownTracer(ctx, tp)
+					_ = redisClient.Close()
 					dbManager.Close()
 					return nil
 				},

@@ -8,7 +8,7 @@ import (
 )
 
 func NewURLServiceClient(address string) (pb.URLServiceClient, error) {
-	conn, err := grpc.Dial(address,
+	conn, err := grpc.NewClient(address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
