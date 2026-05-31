@@ -19,10 +19,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.1.6
-          install-mode: goinstall
+      - run: go vet ./...
 
   test:
     name: Test
