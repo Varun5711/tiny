@@ -50,47 +50,106 @@ Every architectural decision maps to a production concern: read replicas for sca
 
 ## Architecture
 
-```
-                                    ┌──────────────────────────────────────────────┐
-                                    │              Data Stores                      │
-                                    │                                              │
-                                    │  ┌────────────┐  ┌───────┐  ┌────────────┐  │
-                                    │  │ PostgreSQL │  │ Redis │  │ ClickHouse │  │
-                                    │  │ Primary +  │  │ Cache │  │  Analytics │  │
-                                    │  │ 3 Replicas │  │Stream │  │   OLAP     │  │
-                                    │  └──────┬─────┘  └───┬───┘  └─────┬──────┘  │
-                                    │         │            │            │          │
-┌─────────┐    ┌──────────────┐     │  ┌──────┴─────┐     │     ┌──────┴───────┐  │
-│  Users  │───▶│ API Gateway  │─────┼─▶│URL Service │     │     │Elasticsearch │  │
-│ (HTTP)  │    │   :8080      │     │  │ gRPC:50051 │     │     │   Search     │  │
-└─────────┘    └──────┬───────┘     │  └────────────┘     │     └──────────────┘  │
-                      │             │                     │                        │
-               ┌──────┴───────┐     │  ┌────────────┐     │                        │
-               │   Redirect   │─────┼─▶│   User     │     │                        │
-               │ Service:8081 │     │  │  Service   │     │                        │
-               └──────┬───────┘     │  │ gRPC:50052 │     │                        │
-                      │             │  └────────────┘     │                        │
-                      ▼             └──────────────────────┼────────────────────────┘
-               ┌─────────────┐                            │
-               │ Click Event │──── Redis Stream ──────────┤
-               │  Published  │                            │
-               └─────────────┘                            │
-                                                          ▼
-                                    ┌─────────────────────────────────────────────┐
-                                    │              Background Workers              │
-                                    │                                             │
-                                    │  ┌──────────────┐  ┌──────────────────────┐ │
-                                    │  │  Analytics   │  │  Pipeline Worker     │ │
-                                    │  │   Worker     │  │  (Enrich + Store     │ │
-                                    │  │ (Aggregate)  │  │   to ClickHouse/ES)  │ │
-                                    │  └──────────────┘  └──────────────────────┘ │
-                                    │                                             │
-                                    │  ┌──────────────┐  ┌──────────────────────┐ │
-                                    │  │  Cleanup     │  │    Jaeger            │ │
-                                    │  │  Worker      │  │  (Trace Collector)   │ │
-                                    │  │ (TTL sweep)  │  └──────────────────────┘ │
-                                    │  └──────────────┘                           │
-                                    └─────────────────────────────────────────────┘
+### System Overview
+
+```mermaid
+graph TB
+    subgraph Clients
+        USER["Browser / cURL"]
+        TUI["TUI Client<br/>(Bubble Tea)"]
+    end
+
+    subgraph "API Layer"
+        GW["API Gateway<br/>HTTP :8080"]
+        RS["Redirect Service<br/>HTTP :8081"]
+    end
+
+    subgraph "gRPC Services"
+        URL["URL Service<br/>gRPC :50051"]
+        AUTH["User Service<br/>gRPC :50052"]
+    end
+
+    subgraph "Data Stores"
+        PG_P[("PostgreSQL<br/>Primary")]
+        PG_R1[("Replica 1")]
+        PG_R2[("Replica 2")]
+        PG_R3[("Replica 3")]
+        REDIS[("Redis 7<br/>Cache + Streams<br/>+ Rate Limit")]
+        CH[("ClickHouse<br/>Analytics OLAP")]
+        ES[("Elasticsearch 8<br/>Full-Text Search")]
+    end
+
+    subgraph "Background Workers"
+        PW["Pipeline Worker<br/>(GeoIP + UA Enrich)"]
+        AW["Analytics Worker<br/>(Aggregate)"]
+        CW["Cleanup Worker<br/>(TTL Sweep 24h)"]
+    end
+
+    subgraph "Observability"
+        JAEGER["Jaeger<br/>(Trace Collector)"]
+    end
+
+    USER -->|"REST API"| GW
+    USER -->|"GET /:code"| RS
+    TUI -->|"gRPC"| URL
+    TUI -->|"gRPC"| AUTH
+
+    GW -->|"gRPC"| URL
+    GW -->|"gRPC"| AUTH
+    GW -->|"Query"| CH
+    GW -->|"Search"| ES
+    GW -->|"Read/Write"| PG_P
+    GW -->|"Rate Limit"| REDIS
+
+    RS -->|"L1 miss → L2 lookup"| REDIS
+    RS -->|"L2 miss → gRPC"| URL
+    RS -->|"Publish Click"| REDIS
+
+    URL -->|"Write"| PG_P
+    URL -->|"Read"| PG_R1
+    URL -->|"Read"| PG_R2
+    URL -->|"Read"| PG_R3
+    URL -->|"Cache"| REDIS
+    URL -->|"Index"| ES
+    URL -->|"Dist. Lock"| REDIS
+
+    AUTH -->|"Read/Write"| PG_P
+
+    PW -->|"Consume Stream"| REDIS
+    PW -->|"Batch Insert"| CH
+    PW -->|"Index Events"| ES
+
+    AW -->|"Consume Stream"| REDIS
+    AW -->|"Aggregate"| PG_P
+
+    CW -->|"Delete Expired"| PG_P
+
+    PG_P -->|"WAL Replication"| PG_R1
+    PG_P -->|"WAL Replication"| PG_R2
+    PG_P -->|"WAL Replication"| PG_R3
+
+    GW -.->|"OTel Traces"| JAEGER
+    RS -.->|"OTel Traces"| JAEGER
+    URL -.->|"OTel Traces"| JAEGER
+    AUTH -.->|"OTel Traces"| JAEGER
+
+    style GW fill:#4A90D9,stroke:#2C5F8A,color:#fff
+    style RS fill:#4A90D9,stroke:#2C5F8A,color:#fff
+    style URL fill:#6B8E23,stroke:#4A6B0F,color:#fff
+    style AUTH fill:#6B8E23,stroke:#4A6B0F,color:#fff
+    style PG_P fill:#336791,stroke:#1D3F5E,color:#fff
+    style PG_R1 fill:#336791,stroke:#1D3F5E,color:#fff
+    style PG_R2 fill:#336791,stroke:#1D3F5E,color:#fff
+    style PG_R3 fill:#336791,stroke:#1D3F5E,color:#fff
+    style REDIS fill:#DC382D,stroke:#A12920,color:#fff
+    style CH fill:#FFCC00,stroke:#CC9900,color:#000
+    style ES fill:#005571,stroke:#003B4F,color:#fff
+    style PW fill:#8B5CF6,stroke:#6D28D9,color:#fff
+    style AW fill:#8B5CF6,stroke:#6D28D9,color:#fff
+    style CW fill:#8B5CF6,stroke:#6D28D9,color:#fff
+    style JAEGER fill:#66CFE3,stroke:#3BA7BD,color:#000
+    style USER fill:#F59E0B,stroke:#D97706,color:#000
+    style TUI fill:#F59E0B,stroke:#D97706,color:#000
 ```
 
 ### Services
@@ -106,25 +165,176 @@ Every architectural decision maps to a production concern: read replicas for sca
 | **cleanup-worker** | Worker | -- | Periodic deletion of expired URLs (every 24h) |
 | **tui** | CLI | -- | Interactive terminal client (Bubble Tea) |
 
-### Data Flow: What happens when a user clicks a short URL?
+### Redirect Flow (Hot Path)
 
+```mermaid
+sequenceDiagram
+    actor User
+    participant RS as Redirect Service<br/>:8081
+    participant L1 as L1 Cache<br/>(In-Memory LRU)
+    participant L2 as L2 Cache<br/>(Redis)
+    participant URL as URL Service<br/>(gRPC :50051)
+    participant PG as PostgreSQL<br/>(Read Replica)
+    participant Stream as Redis Stream
+    participant PW as Pipeline Worker
+
+    User->>RS: GET /abc123
+    RS->>L1: Lookup "url:abc123"
+    alt L1 Cache Hit
+        L1-->>RS: https://example.com
+    else L1 Cache Miss
+        RS->>L2: GET url:abc123
+        alt L2 Cache Hit
+            L2-->>RS: https://example.com
+            RS->>L1: Set (backfill)
+        else L2 Cache Miss
+            RS->>URL: GetURL(abc123) [gRPC]
+            URL->>PG: SELECT long_url FROM urls
+            PG-->>URL: https://example.com
+            URL-->>RS: {long_url, found: true}
+            RS->>L1: Set
+            RS->>L2: SET url:abc123 (TTL 1h)
+        end
+    end
+
+    RS->>Stream: XADD clicks:stream {short_code, ip, ua, referer, ...}
+    RS-->>User: 302 Redirect → https://example.com
+
+    Note over Stream,PW: Async Processing
+    PW->>Stream: XREADGROUP (consumer group)
+    PW->>PW: Enrich: GeoIP + UA Parse
+    PW->>PW: Batch (configurable size)
+
+    par Store Analytics
+        PW->>PW: Insert → ClickHouse
+    and Index for Search
+        PW->>PW: Bulk Index → Elasticsearch
+    end
+    PW->>Stream: XACK (acknowledge)
 ```
-1. GET /abc123 → redirect-service
-2. Check L1 cache (in-memory LRU) → miss
-3. Check L2 cache (Redis) → miss
-4. gRPC call → url-service → PostgreSQL read replica
-5. Cache result in L1 + L2
-6. Publish click event → Redis Stream
-7. Return 302 redirect to user
 
---- async pipeline ---
+### Create URL Flow
 
-8.  pipeline-worker reads from Redis Stream
-9.  Enrich with GeoIP (country, city, lat/lng)
-10. Parse User-Agent (browser, OS, device type)
-11. Batch insert → ClickHouse
-12. Index → Elasticsearch
-13. ACK message in Redis Stream
+```mermaid
+sequenceDiagram
+    actor User
+    participant GW as API Gateway<br/>:8080
+    participant MW as Middleware<br/>(Auth + Rate Limit)
+    participant URL as URL Service<br/>(gRPC :50051)
+    participant SF as Snowflake ID<br/>Generator
+    participant PG as PostgreSQL<br/>(Primary)
+    participant Redis as Redis
+    participant ES as Elasticsearch
+    participant QR as QR Code<br/>Generator
+
+    User->>GW: POST /api/urls {long_url}
+    GW->>MW: Validate JWT Token
+    MW->>MW: Check Rate Limit (Redis)
+    MW-->>GW: Authorized (user_id)
+
+    GW->>URL: CreateURL(long_url, user_id) [gRPC]
+    URL->>SF: NextID()
+    SF-->>URL: 1234567890 (int64)
+    URL->>URL: Base62 Encode → "7Bx9kL"
+    URL->>QR: Generate QR for short URL
+    QR-->>URL: Base64 PNG
+
+    URL->>PG: INSERT INTO urls (short_code, long_url, user_id, qr_code, ...)
+    URL->>Redis: SET url:7Bx9kL → long_url
+    URL->>ES: Index URL document (if enabled)
+
+    URL-->>GW: {short_code, short_url, qr_code, ...}
+    GW-->>User: 201 Created {short_code, short_url, qr_code}
+```
+
+### Custom Alias Flow (with Distributed Locking)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant GW as API Gateway
+    participant URL as URL Service
+    participant Redis as Redis
+    participant PG as PostgreSQL<br/>(Primary)
+
+    User->>GW: POST /api/urls/custom {alias: "my-brand", long_url}
+    GW->>URL: CreateCustomURL("my-brand", long_url) [gRPC]
+
+    URL->>URL: Validate alias (regex, reserved words)
+    URL->>Redis: SET lock:alias:my-brand NX EX 5s
+    alt Lock Acquired
+        URL->>PG: SELECT EXISTS(short_code = 'my-brand')
+        alt Alias Available
+            PG-->>URL: false (not taken)
+            URL->>PG: INSERT INTO urls (short_code='my-brand', ...)
+            URL->>Redis: SET url:my-brand → long_url
+            URL->>Redis: DEL lock:alias:my-brand (Lua script)
+            URL-->>GW: {short_code: "my-brand", short_url, qr_code}
+            GW-->>User: 201 Created
+        else Alias Taken
+            PG-->>URL: true (exists)
+            URL->>URL: Generate 3 alternatives
+            URL->>Redis: DEL lock:alias:my-brand
+            URL-->>GW: Error: alias taken, try: my-brand1, my-brand2, my-brand-x
+            GW-->>User: 409 Conflict
+        end
+    else Lock Not Acquired
+        URL-->>GW: Error: alias being claimed, retry
+        GW-->>User: 429 Retry Later
+    end
+```
+
+### Analytics Pipeline
+
+```mermaid
+graph LR
+    subgraph "Click Event Source"
+        RS["Redirect Service"]
+    end
+
+    subgraph "Message Queue"
+        STREAM["Redis Stream<br/>clicks:stream"]
+    end
+
+    subgraph "Pipeline Worker"
+        READ["XREADGROUP<br/>(Consumer Group)"]
+        GEO["GeoIP Enrichment<br/>Country, City, Lat/Lng"]
+        UA["User-Agent Parse<br/>Browser, OS, Device"]
+        BATCH["Batch Builder"]
+    end
+
+    subgraph "Storage"
+        CH[("ClickHouse<br/>(Raw Events)")]
+        MV1["daily_clicks_by_url<br/>(Materialized View)"]
+        MV2["clicks_by_country<br/>(Materialized View)"]
+        MV3["clicks_by_device<br/>(Materialized View)"]
+        MV4["hourly_clicks<br/>(Materialized View)"]
+        ES[("Elasticsearch<br/>(Click Search Index)")]
+    end
+
+    subgraph "Analytics Worker"
+        AW["Aggregate to<br/>PostgreSQL"]
+    end
+
+    RS -->|"XADD"| STREAM
+    STREAM --> READ
+    READ --> GEO --> UA --> BATCH
+    BATCH -->|"Batch Insert"| CH
+    BATCH -->|"Bulk Index"| ES
+    CH --> MV1
+    CH --> MV2
+    CH --> MV3
+    CH --> MV4
+    STREAM -->|"XREADGROUP"| AW
+
+    style RS fill:#4A90D9,stroke:#2C5F8A,color:#fff
+    style STREAM fill:#DC382D,stroke:#A12920,color:#fff
+    style CH fill:#FFCC00,stroke:#CC9900,color:#000
+    style ES fill:#005571,stroke:#003B4F,color:#fff
+    style MV1 fill:#FFF3CD,stroke:#CC9900,color:#000
+    style MV2 fill:#FFF3CD,stroke:#CC9900,color:#000
+    style MV3 fill:#FFF3CD,stroke:#CC9900,color:#000
+    style MV4 fill:#FFF3CD,stroke:#CC9900,color:#000
 ```
 
 ---
