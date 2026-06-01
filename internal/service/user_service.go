@@ -11,12 +11,21 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// UserService implements the gRPC UserServiceServer interface, handling user
+// registration, authentication, profile management, and JWT token operations.
+// It delegates persistence to UserStorage (PostgreSQL) and token signing /
+// verification to JWTManager.
+//
+// The interaction pattern mirrors URLService: validate the protobuf request,
+// call the storage layer, then map the result into a protobuf response.
+// Passwords are hashed with bcrypt before storage and never leave the server.
 type UserService struct {
 	pb.UnimplementedUserServiceServer
-	userStorage *storage.UserStorage
-	jwtManager  *auth.JWTManager
+	userStorage *storage.UserStorage // PostgreSQL-backed user persistence.
+	jwtManager  *auth.JWTManager     // Handles JWT creation and validation.
 }
 
+// NewUserService creates a UserService with its required dependencies.
 func NewUserService(userStorage *storage.UserStorage, jwtManager *auth.JWTManager) *UserService {
 	return &UserService{
 		userStorage: userStorage,
@@ -24,6 +33,13 @@ func NewUserService(userStorage *storage.UserStorage, jwtManager *auth.JWTManage
 	}
 }
 
+// Register handles the gRPC Register RPC. The flow is:
+//  1. Validate required fields and enforce a minimum password length (8 chars).
+//  2. Check that no account with the same email exists (read-path query).
+//  3. Hash the password with bcrypt via auth.HashPassword.
+//  4. Insert the new user into PostgreSQL via UserStorage.CreateUser.
+//  5. Immediately issue a JWT so the client is authenticated after signup
+//     without a separate Login round-trip.
 func (s *UserService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
 	if req.Email == "" {
 		return nil, status.Error(codes.InvalidArgument, "email is required")
@@ -75,6 +91,12 @@ func (s *UserService) Register(ctx context.Context, req *pb.RegisterRequest) (*p
 	}, nil
 }
 
+// Login handles the gRPC Login RPC. It looks up the user by email, verifies
+// the password against the stored bcrypt hash, and returns a signed JWT on
+// success. Both "user not found" and "wrong password" return the same
+// user-facing message ("invalid email or password") to prevent email
+// enumeration attacks, but they use different gRPC status codes (NotFound vs.
+// Unauthenticated) so server-side observability can distinguish the two.
 func (s *UserService) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
 	if req.Email == "" {
 		return nil, status.Error(codes.InvalidArgument, "email is required")
@@ -109,6 +131,11 @@ func (s *UserService) Login(ctx context.Context, req *pb.LoginRequest) (*pb.Logi
 	}, nil
 }
 
+// GetProfile handles the gRPC GetProfile RPC. It validates the JWT, extracts
+// the user ID from the token claims, and fetches the full user record from
+// PostgreSQL. This is a token-authenticated endpoint -- the user ID is derived
+// from the JWT, not from the request body, preventing users from viewing
+// other accounts.
 func (s *UserService) GetProfile(ctx context.Context, req *pb.GetProfileRequest) (*pb.GetProfileResponse, error) {
 	if req.Token == "" {
 		return nil, status.Error(codes.InvalidArgument, "token is required")
@@ -138,6 +165,10 @@ func (s *UserService) GetProfile(ctx context.Context, req *pb.GetProfileRequest)
 	}, nil
 }
 
+// UpdateProfile handles the gRPC UpdateProfile RPC. Like GetProfile, it
+// extracts the user ID from the JWT so a user can only modify their own
+// profile. The updated name and email are written to PostgreSQL and the
+// refreshed record is returned.
 func (s *UserService) UpdateProfile(ctx context.Context, req *pb.UpdateProfileRequest) (*pb.UpdateProfileResponse, error) {
 	if req.Token == "" {
 		return nil, status.Error(codes.InvalidArgument, "token is required")
@@ -164,6 +195,11 @@ func (s *UserService) UpdateProfile(ctx context.Context, req *pb.UpdateProfileRe
 	}, nil
 }
 
+// ValidateToken handles the gRPC ValidateToken RPC. It is a lightweight
+// stateless check -- no database call is made. The JWT signature and expiry
+// are verified, and if valid, the embedded user ID and expiration are returned.
+// Invalid or expired tokens return Valid=false with no gRPC error, allowing
+// the API gateway to distinguish "bad token" from "server error".
 func (s *UserService) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
 	if req.Token == "" {
 		return &pb.ValidateTokenResponse{Valid: false}, nil

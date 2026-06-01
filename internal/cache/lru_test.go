@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+// TestNewLRUCache verifies that a freshly created cache has the requested
+// capacity and starts empty.
 func TestNewLRUCache(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -19,6 +21,7 @@ func TestNewLRUCache(t *testing.T) {
 	}
 }
 
+// TestLRUCache_SetAndGet confirms the basic store-then-retrieve path works.
 func TestLRUCache_SetAndGet(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -33,6 +36,8 @@ func TestLRUCache_SetAndGet(t *testing.T) {
 	}
 }
 
+// TestLRUCache_GetNotFound ensures a miss returns (nil, false) rather than
+// panicking or returning a zero value.
 func TestLRUCache_GetNotFound(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -45,6 +50,8 @@ func TestLRUCache_GetNotFound(t *testing.T) {
 	}
 }
 
+// TestLRUCache_UpdateExisting verifies that setting an existing key updates the
+// value in-place without increasing the cache length.
 func TestLRUCache_UpdateExisting(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -63,6 +70,8 @@ func TestLRUCache_UpdateExisting(t *testing.T) {
 	}
 }
 
+// TestLRUCache_Eviction checks that inserting beyond capacity evicts the
+// least-recently-used entry (the oldest untouched key).
 func TestLRUCache_Eviction(t *testing.T) {
 	cache := NewLRUCache(3)
 
@@ -91,6 +100,9 @@ func TestLRUCache_Eviction(t *testing.T) {
 	}
 }
 
+// TestLRUCache_LRUOrder verifies that a Get promotes an entry, protecting it
+// from eviction. key1 is accessed after key3, so key2 becomes the LRU victim
+// when key4 is inserted.
 func TestLRUCache_LRUOrder(t *testing.T) {
 	cache := NewLRUCache(3)
 
@@ -113,6 +125,8 @@ func TestLRUCache_LRUOrder(t *testing.T) {
 	}
 }
 
+// TestLRUCache_Delete ensures that explicit deletion removes only the targeted
+// key and leaves other entries intact.
 func TestLRUCache_Delete(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -136,6 +150,8 @@ func TestLRUCache_Delete(t *testing.T) {
 	}
 }
 
+// TestLRUCache_DeleteNonExistent confirms that deleting a key that was never
+// inserted is a safe no-op.
 func TestLRUCache_DeleteNonExistent(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -146,6 +162,8 @@ func TestLRUCache_DeleteNonExistent(t *testing.T) {
 	}
 }
 
+// TestLRUCache_Clear verifies that Clear removes all entries and resets the
+// length to zero.
 func TestLRUCache_Clear(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -165,6 +183,8 @@ func TestLRUCache_Clear(t *testing.T) {
 	}
 }
 
+// TestLRUCache_DifferentValueTypes exercises the interface{} value slot with
+// strings, ints, and structs to confirm type-agnostic storage.
 func TestLRUCache_DifferentValueTypes(t *testing.T) {
 	cache := NewLRUCache(10)
 
@@ -189,6 +209,9 @@ func TestLRUCache_DifferentValueTypes(t *testing.T) {
 	}
 }
 
+// TestLRUCache_Concurrent stress-tests the cache under concurrent access. 100
+// goroutines each perform 100 Set/Get cycles. The test passes if no race
+// detector violations or panics occur (run with -race to verify).
 func TestLRUCache_Concurrent(t *testing.T) {
 	cache := NewLRUCache(100)
 
@@ -211,6 +234,8 @@ func TestLRUCache_Concurrent(t *testing.T) {
 	wg.Wait()
 }
 
+// TestLRUCache_ZeroCapacity confirms the edge case: a cache with capacity 0
+// evicts every entry immediately after insertion, keeping length at 0.
 func TestLRUCache_ZeroCapacity(t *testing.T) {
 	cache := NewLRUCache(0)
 

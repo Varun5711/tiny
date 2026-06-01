@@ -1,3 +1,18 @@
+// Package integration contains end-to-end tests that exercise the Tiny URL
+// shortener through its public HTTP API. These tests require a fully running
+// stack (API gateway, auth service, URL service, redirect service, PostgreSQL,
+// Redis) and are gated behind the INTEGRATION_TEST=true environment variable
+// so they never run during normal `go test ./...` invocations.
+//
+// The tests are designed to run in order (Go runs tests within a package
+// sequentially by default). Earlier tests (register, login) populate the
+// package-level authToken variable that later tests depend on. Each test
+// uses t.Skip if the token is missing rather than failing, so a CI failure
+// in registration surfaces clearly without cascading noise.
+//
+// Service URLs default to localhost but can be overridden via environment
+// variables (API_GATEWAY_URL, REDIRECT_SERVICE_URL) for Docker Compose or
+// Kubernetes test environments.
 package integration
 
 import (
@@ -10,14 +25,19 @@ import (
 	"time"
 )
 
+// Package-level test configuration. The test user email includes a nanosecond
+// timestamp to avoid collisions across repeated test runs against the same
+// database.
 var (
 	apiGatewayURL    = getEnv("API_GATEWAY_URL", "http://localhost:8080")
 	redirectURL      = getEnv("REDIRECT_SERVICE_URL", "http://localhost:8081")
 	testUserEmail    = fmt.Sprintf("test-%d@example.com", time.Now().UnixNano())
 	testUserPassword = "testPassword123"
-	authToken        string
+	authToken        string // populated by TestUserRegistration / TestUserLogin
 )
 
+// getEnv returns the environment variable value or a default. Used to make
+// service URLs configurable for different deployment environments.
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -25,6 +45,9 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+// TestMain is the test entry point. It exits immediately with a skip message
+// when INTEGRATION_TEST is not set, preventing these slow, infra-dependent
+// tests from running during unit-test sweeps.
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TEST") != "true" {
 		fmt.Println("Skipping integration tests. Set INTEGRATION_TEST=true to run.")
@@ -33,6 +56,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// TestHealthCheck verifies the API gateway is reachable and returns 200.
+// This is the first test to run and serves as a smoke test for the stack.
 func TestHealthCheck(t *testing.T) {
 	resp, err := http.Get(apiGatewayURL + "/health")
 	if err != nil {
@@ -45,6 +70,9 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+// TestUserRegistration creates a new user account and captures the auth token
+// for use by subsequent tests. Accepts both 200 and 201 because the API may
+// return either depending on the implementation.
 func TestUserRegistration(t *testing.T) {
 	payload := map[string]string{
 		"email":    testUserEmail,
@@ -73,6 +101,9 @@ func TestUserRegistration(t *testing.T) {
 	}
 }
 
+// TestUserLogin authenticates the previously registered user and updates
+// the authToken. This test also runs after registration so there is always
+// a fresh token for the URL operation tests that follow.
 func TestUserLogin(t *testing.T) {
 	payload := map[string]string{
 		"email":    testUserEmail,
@@ -104,6 +135,8 @@ func TestUserLogin(t *testing.T) {
 	}
 }
 
+// TestCreateURL verifies that an authenticated user can shorten a URL
+// and receives a short_code in the response.
 func TestCreateURL(t *testing.T) {
 	if authToken == "" {
 		t.Skip("no auth token available")
@@ -139,6 +172,9 @@ func TestCreateURL(t *testing.T) {
 	}
 }
 
+// TestCreateCustomURL verifies that an authenticated user can create a
+// short URL with a custom alias and that the returned short_code matches
+// the requested alias exactly.
 func TestCreateCustomURL(t *testing.T) {
 	if authToken == "" {
 		t.Skip("no auth token available")
@@ -176,6 +212,8 @@ func TestCreateCustomURL(t *testing.T) {
 	}
 }
 
+// TestListURLs verifies that the authenticated user can retrieve their
+// list of short URLs and that the response contains a "urls" array.
 func TestListURLs(t *testing.T) {
 	if authToken == "" {
 		t.Skip("no auth token available")
@@ -205,6 +243,10 @@ func TestListURLs(t *testing.T) {
 	}
 }
 
+// TestRedirect performs the full redirect flow: creates a short URL, then
+// hits the redirect service and asserts a 301/302 with the correct Location
+// header. A custom HTTP client with redirect-following disabled is used so
+// we can inspect the redirect response directly.
 func TestRedirect(t *testing.T) {
 	if authToken == "" {
 		t.Skip("no auth token available")
@@ -256,6 +298,8 @@ func TestRedirect(t *testing.T) {
 	}
 }
 
+// TestUnauthorizedAccess verifies that requests without an Authorization
+// header are rejected with 401, ensuring the auth middleware is active.
 func TestUnauthorizedAccess(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, apiGatewayURL+"/api/urls", nil)
 
@@ -271,6 +315,8 @@ func TestUnauthorizedAccess(t *testing.T) {
 	}
 }
 
+// TestInvalidURL verifies that submitting a malformed URL (missing scheme
+// and host) returns a 400 Bad Request, confirming server-side validation.
 func TestInvalidURL(t *testing.T) {
 	if authToken == "" {
 		t.Skip("no auth token available")
@@ -297,6 +343,8 @@ func TestInvalidURL(t *testing.T) {
 	}
 }
 
+// TestNotFoundShortCode verifies that the redirect service returns 404
+// for a nonexistent short code rather than a redirect or server error.
 func TestNotFoundShortCode(t *testing.T) {
 	resp, err := http.Get(redirectURL + "/nonexistent-code-12345")
 	if err != nil {

@@ -1,3 +1,16 @@
+// Package service implements the gRPC service layer for the tiny URL shortener.
+//
+// This package bridges incoming gRPC requests with the underlying storage,
+// caching, search indexing, and ID generation subsystems. Each service struct
+// embeds its corresponding protobuf UnimplementedServer to satisfy the gRPC
+// interface contract, then overrides the methods it supports. The general
+// request flow is:
+//
+//  1. Validate the inbound protobuf request.
+//  2. Perform business logic (ID generation, locking, password hashing, etc.).
+//  3. Persist changes through the storage layer (PostgreSQL via the Storage interface).
+//  4. Update secondary stores (Redis cache, Elasticsearch) on a best-effort basis.
+//  5. Map the domain model back into a protobuf response.
 package service
 
 import (
@@ -20,17 +33,28 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// URLService implements the gRPC URLServiceServer interface, orchestrating
+// URL shortening, retrieval, deletion, and analytics. It embeds the
+// UnimplementedURLServiceServer so that adding new RPCs to the proto
+// definition does not break compilation until they are explicitly handled.
+//
+// Architecture: every write first goes to PostgreSQL (the source of truth),
+// then updates Redis (cache) and Elasticsearch (search index) on a best-effort
+// basis. Reads check the cache first and fall back to the database.
 type URLService struct {
 	pb.UnimplementedURLServiceServer
-	store       storage.Storage
-	idGen       *idgen.Generator
-	cache       *cache.Cache
-	redisClient *redis.Client
-	esClient    *es.Client
-	baseURL     string
-	defaultTTL  time.Duration
+	store       storage.Storage     // Primary persistence (PostgreSQL via the Storage interface).
+	idGen       *idgen.Generator    // Snowflake-based ID generator for globally unique short codes.
+	cache       *cache.Cache        // Redis-backed cache mapping short codes to long URLs.
+	redisClient *redis.Client       // Raw Redis client used for distributed locking (custom aliases).
+	esClient    *es.Client          // Elasticsearch client for full-text search indexing; may be nil.
+	baseURL     string              // Public-facing base URL prepended to short codes (e.g., "https://tiny.io").
+	defaultTTL  time.Duration       // Default time-to-live applied when the caller does not specify an expiry.
 }
 
+// NewURLService constructs a URLService with all required dependencies. The
+// esClient parameter may be nil if Elasticsearch is not configured, in which
+// case indexing calls are silently skipped.
 func NewURLService(store storage.Storage, idGen *idgen.Generator, urlCache *cache.Cache, redisClient *redis.Client, esClient *es.Client, baseURL string, defaultTTL time.Duration) *URLService {
 	return &URLService{
 		store:       store,
@@ -43,6 +67,13 @@ func NewURLService(store storage.Storage, idGen *idgen.Generator, urlCache *cach
 	}
 }
 
+// CreateURL handles the gRPC CreateURL RPC. The flow is:
+//  1. Generate a globally unique Snowflake ID and base62-encode it into a short code.
+//  2. Determine the expiration time from the request or fall back to defaultTTL.
+//  3. Generate a QR code image (base64 PNG) pointing to the short URL.
+//  4. Persist the URL record to PostgreSQL via the Storage interface.
+//  5. Index the document in Elasticsearch (best-effort, errors are swallowed).
+//  6. Warm the Redis cache so the first redirect is served without a DB hit.
 func (s *URLService) CreateURL(ctx context.Context, req *pb.CreateURLRequest) (*pb.CreateURLResponse, error) {
 	if req.LongUrl == "" {
 		return nil, status.Error(codes.InvalidArgument, "long_url is required")
@@ -114,6 +145,11 @@ func (s *URLService) CreateURL(ctx context.Context, req *pb.CreateURLRequest) (*
 	}, nil
 }
 
+// GetURL handles the gRPC GetURL RPC. It looks up a URL by short code in
+// PostgreSQL. If the URL exists and has not expired, it is returned wrapped
+// in a protobuf response with Found=true. A missing or expired URL returns
+// Found=false with a nil URL -- no gRPC error is raised for "not found" so
+// the caller can distinguish "missing" from "server failure".
 func (s *URLService) GetURL(ctx context.Context, req *pb.GetURLRequest) (*pb.GetURLResponse, error) {
 	if req.ShortCode == "" {
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
@@ -146,6 +182,10 @@ func (s *URLService) GetURL(ctx context.Context, req *pb.GetURLRequest) (*pb.Get
 	}, nil
 }
 
+// ListURLs handles the gRPC ListURLs RPC with server-side pagination. When
+// UserId is set on the request, only URLs belonging to that user are returned;
+// otherwise all URLs are listed. Limit is clamped to [1, 1000] and offset
+// defaults to 0 to prevent unbounded queries.
 func (s *URLService) ListURLs(ctx context.Context, req *pb.ListURLsRequest) (*pb.ListURLsResponse, error) {
 	limit := req.Limit
 	if limit <= 0 {
@@ -202,6 +242,11 @@ func (s *URLService) ListURLs(ctx context.Context, req *pb.ListURLsRequest) (*pb
 	}, nil
 }
 
+// DeleteURL handles the gRPC DeleteURL RPC. It removes the URL from
+// PostgreSQL, Elasticsearch, and the Redis cache in that order. If the short
+// code does not exist in PostgreSQL, Success=false is returned without a gRPC
+// error. Secondary store deletions are best-effort -- their errors are
+// intentionally ignored so a cache/search outage does not block the user.
 func (s *URLService) DeleteURL(ctx context.Context, req *pb.DeleteURLRequest) (*pb.DeleteURLResponse, error) {
 	if req.ShortCode == "" {
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
@@ -226,6 +271,10 @@ func (s *URLService) DeleteURL(ctx context.Context, req *pb.DeleteURLRequest) (*
 	}, nil
 }
 
+// IncrementClicks handles the gRPC IncrementClicks RPC. It atomically
+// increments the click counter in PostgreSQL, then re-reads the URL to return
+// the updated count. This two-step approach (UPDATE then SELECT) keeps the
+// write path simple while giving the caller the freshest count.
 func (s *URLService) IncrementClicks(ctx context.Context, req *pb.IncrementClicksRequest) (*pb.IncrementClicksResponse, error) {
 	if req.ShortCode == "" {
 		return nil, status.Error(codes.InvalidArgument, "short_code is required")
@@ -249,6 +298,17 @@ func (s *URLService) IncrementClicks(ctx context.Context, req *pb.IncrementClick
 	}, nil
 }
 
+// CreateCustomURL handles the gRPC CreateCustomURL RPC, allowing users to
+// choose their own alias (e.g., "my-link") instead of accepting a random
+// short code. Alias uniqueness is enforced by a two-layer strategy:
+//
+//  1. A Redis-based distributed lock prevents concurrent requests for the
+//     same alias from racing.
+//  2. A strongly-consistent read against the PostgreSQL primary (not a read
+//     replica) confirms the alias is truly available before INSERT.
+//
+// If the alias is already taken, the response includes suggested alternatives
+// generated by the validation package.
 func (s *URLService) CreateCustomURL(ctx context.Context, req *pb.CreateCustomURLRequest) (*pb.CreateCustomURLResponse, error) {
 	if req.Alias == "" {
 		return nil, status.Error(codes.InvalidArgument, "alias is required")
@@ -295,6 +355,16 @@ func (s *URLService) CreateCustomURL(ctx context.Context, req *pb.CreateCustomUR
 	}, nil
 }
 
+// createCustomURLInternal contains the core logic for custom alias creation,
+// separated from the gRPC handler so error classification (InvalidArgument vs.
+// AlreadyExists vs. Internal) can be handled at the handler level. The method:
+//
+//  1. Validates the alias format (length, allowed characters).
+//  2. Acquires a Redis distributed lock keyed to the alias with a 5-second TTL.
+//  3. Asserts that the storage layer is PostgresStorage (custom aliases need
+//     direct access to AliasExistsPrimary for strong consistency).
+//  4. Checks alias availability on the primary database.
+//  5. Persists the URL and warms the cache.
 func (s *URLService) createCustomURLInternal(ctx context.Context, alias, longURL string, expiresAt *time.Time, userID string) (*CreateURLResult, error) {
 	if err := validation.ValidateAlias(alias); err != nil {
 		return nil, fmt.Errorf("invalid alias: %w", err)
@@ -349,6 +419,9 @@ func (s *URLService) createCustomURLInternal(ctx context.Context, alias, longURL
 	}, nil
 }
 
+// CreateURLResult is an internal value object returned by
+// createCustomURLInternal. It bundles the fields needed to build the gRPC
+// response without exposing protobuf types in the private method signature.
 type CreateURLResult struct {
 	ShortCode string
 	ShortURL  string
@@ -356,6 +429,9 @@ type CreateURLResult struct {
 	CreatedAt time.Time
 }
 
+// getQRCode retrieves the stored QR code for a given short code from the
+// database. It is used after custom alias creation to attach the QR code to
+// the response (the QR code is generated and stored during insertion).
 func (s *URLService) getQRCode(ctx context.Context, shortCode string) (string, error) {
 	url, err := s.store.GetByShortCode(ctx, shortCode)
 	if err != nil || url == nil {

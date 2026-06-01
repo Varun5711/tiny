@@ -7,17 +7,24 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// MenuModel drives the main menu screen shown after login. It presents
+// a vertical list of actions (create URL, view URLs, analytics, logout)
+// and tracks which item the cursor is on. When the user presses Enter,
+// `selected` is set to the cursor index; the parent Model reads this
+// value to trigger a view transition and then resets it to -1.
 type MenuModel struct {
 	cursor   int
-	selected int
+	selected int // -1 = nothing selected; 0-3 = menu item index
 	items    []string
 	userName string
 }
 
+// Init satisfies the tea.Model interface; no startup command is needed.
 func (m *MenuModel) Init() tea.Cmd {
 	return nil
 }
 
+// NewMenuModel creates a MenuModel with the four main navigation options.
 func NewMenuModel() *MenuModel {
 	return &MenuModel{
 		cursor:   0,
@@ -31,10 +38,12 @@ func NewMenuModel() *MenuModel {
 	}
 }
 
+// SetUserName updates the greeting displayed at the top of the menu.
 func (m *MenuModel) SetUserName(name string) {
 	m.userName = name
 }
 
+// Update handles up/down navigation and Enter selection.
 func (m *MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -54,6 +63,8 @@ func (m *MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the branded menu with a centered title, optional greeting,
+// and a keyboard-navigable list of actions inside a rounded box.
 func (m *MenuModel) View() string {
 	var b strings.Builder
 

@@ -13,6 +13,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// ClickEvent represents a single click-tracking event returned by the
+// analytics REST API. Each field is populated by the enrichment pipeline
+// at redirect time and stored in the clicks table.
 type ClickEvent struct {
 	EventID        string `json:"event_id"`
 	ShortCode      string `json:"short_code"`
@@ -30,14 +33,20 @@ type ClickEvent struct {
 	Referer        string `json:"referer"`
 }
 
+// clickEventsSuccessMsg carries the fetched click events back to the model.
 type clickEventsSuccessMsg struct {
 	events []ClickEvent
 }
 
+// clickEventsErrorMsg carries an analytics fetch failure.
 type clickEventsErrorMsg struct {
 	err error
 }
 
+// AnalyticsModel manages the click-analytics table view. Unlike the URL list
+// (which uses gRPC), analytics data is fetched via the REST API gateway
+// because the analytics endpoints are HTTP-only. The JWT token is passed
+// in the Authorization header for authentication.
 type AnalyticsModel struct {
 	events  []ClickEvent
 	cursor  int
@@ -47,9 +56,11 @@ type AnalyticsModel struct {
 	err     error
 	client  *client.Client
 	loaded  bool
-	token   string
+	token   string // JWT for REST API authentication
 }
 
+// NewAnalyticsModel creates an AnalyticsModel with 10 events per page,
+// sized for the wider table layout used in the analytics view.
 func NewAnalyticsModel() *AnalyticsModel {
 	return &AnalyticsModel{
 		perPage: 10,
@@ -57,14 +68,21 @@ func NewAnalyticsModel() *AnalyticsModel {
 	}
 }
 
+// SetClient wires the gRPC client (currently unused by analytics but
+// kept for potential future gRPC analytics endpoints).
 func (m *AnalyticsModel) SetClient(c *client.Client) {
 	m.client = c
 }
 
+// SetToken stores the JWT token used to authenticate REST API calls.
 func (m *AnalyticsModel) SetToken(token string) {
 	m.token = token
 }
 
+// fetchClickEventsCmd fetches up to 50 recent click events from the
+// analytics REST endpoint. It uses the standard net/http client rather
+// than gRPC because the analytics API is exposed only over HTTP through
+// the API gateway.
 func fetchClickEventsCmd(token string) tea.Cmd {
 	return func() tea.Msg {
 
@@ -100,10 +118,14 @@ func fetchClickEventsCmd(token string) tea.Cmd {
 	}
 }
 
+// Init satisfies the tea.Model interface; no startup command is needed.
 func (m *AnalyticsModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles analytics table navigation (up/down cursor, left/right
+// paging, r to refresh). Auto-fetches on first render when the view has
+// not yet loaded and a token is available.
 func (m *AnalyticsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case clickEventsSuccessMsg:
@@ -162,6 +184,9 @@ func (m *AnalyticsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the analytics data as a multi-column table with IP address,
+// short code, original URL, timestamp, location, browser, and device type.
+// The selected row is highlighted with accent styling.
 func (m *AnalyticsModel) View() string {
 	var b strings.Builder
 
@@ -282,6 +307,7 @@ func (m *AnalyticsModel) View() string {
 	return BoxStyle.Width(136).Render(b.String())
 }
 
+// min returns the smaller of two ints. Used for clamping page boundaries.
 func min(a, b int) int {
 	if a < b {
 		return a

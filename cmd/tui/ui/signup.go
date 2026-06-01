@@ -9,6 +9,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// signupSuccessMsg is dispatched when the gRPC Register RPC succeeds.
+// The parent Model intercepts it to update auth state, persist the
+// session, and navigate to the menu view.
 type signupSuccessMsg struct {
 	token  string
 	userID string
@@ -16,34 +19,43 @@ type signupSuccessMsg struct {
 	name   string
 }
 
+// signupErrorMsg carries a registration failure back to the SignupModel.
 type signupErrorMsg struct {
 	err error
 }
 
+// SignupModel manages the registration form: three text inputs (name,
+// email, password), focus tracking, and client-side validation (e.g.,
+// minimum password length of 8 characters).
 type SignupModel struct {
 	nameInput     string
 	emailInput    string
 	passwordInput string
-	focusedInput  int
+	focusedInput  int // 0 = name, 1 = email, 2 = password
 	loading       bool
 	err           error
 	authClient    *client.AuthClient
 }
 
+// NewSignupModel creates a SignupModel with the name field focused.
 func NewSignupModel() *SignupModel {
 	return &SignupModel{
 		focusedInput: 0,
 	}
 }
 
+// SetAuthClient wires the gRPC auth client into the model after construction.
 func (m *SignupModel) SetAuthClient(c *client.AuthClient) {
 	m.authClient = c
 }
 
+// Init satisfies the tea.Model interface; no startup command is needed.
 func (m *SignupModel) Init() tea.Cmd {
 	return nil
 }
 
+// signupCmd returns a Bubble Tea Cmd that calls the gRPC Register RPC in
+// the background and dispatches a success or error message on completion.
 func signupCmd(c *client.AuthClient, email, password, name string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := c.Register(email, password, name)
@@ -60,6 +72,9 @@ func signupCmd(c *client.AuthClient, email, password, name string) tea.Cmd {
 	}
 }
 
+// Update handles signup form interaction. It validates all three fields
+// before submission and enforces a minimum password length of 8 characters
+// client-side to give immediate feedback.
 func (m *SignupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case signupSuccessMsg:
@@ -134,6 +149,8 @@ func (m *SignupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the signup form with name, email, and password fields,
+// a password-length hint, loading indicator, and inline error display.
 func (m *SignupModel) View() string {
 	var b strings.Builder
 

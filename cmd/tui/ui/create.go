@@ -14,44 +14,61 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// createURLSuccessMsg is dispatched when the gRPC CreateURL or
+// CreateCustomURL RPC succeeds. It carries the generated short URL.
 type createURLSuccessMsg struct {
 	shortURL string
 }
 
+// copySuccessMsg signals that the short URL was copied to the clipboard.
 type copySuccessMsg struct{}
+
+// copyErrorMsg carries a clipboard-copy failure.
 type copyErrorMsg struct {
 	err error
 }
 
+// createURLErrorMsg carries a URL creation failure.
 type createURLErrorMsg struct {
 	err error
 }
 
+// CreateModel manages the URL creation form: a long-URL input, an optional
+// custom alias input, and post-creation state (the result URL, clipboard
+// copy status). It handles both auto-generated and custom short codes by
+// branching on whether the alias field is empty.
 type CreateModel struct {
 	urlInput     string
 	aliasInput   string
-	focusedInput int
+	focusedInput int // 0 = URL input, 1 = alias input
 	loading      bool
-	result       string
-	copied       bool
+	result       string // the short URL returned after successful creation
+	copied       bool   // whether the result has been copied to clipboard
 	err          error
 	client       *client.Client
 }
 
+// Init satisfies the tea.Model interface; no startup command is needed.
 func (m *CreateModel) Init() tea.Cmd {
 	return nil
 }
 
+// NewCreateModel creates a CreateModel with the URL field focused.
 func NewCreateModel() *CreateModel {
 	return &CreateModel{
 		focusedInput: 0,
 	}
 }
 
+// SetClient wires the gRPC URL client into the model.
 func (m *CreateModel) SetClient(c *client.Client) {
 	m.client = c
 }
 
+// validateURL performs client-side URL validation before sending to the
+// server. It checks for a non-empty value, an HTTP(S) scheme, valid URL
+// structure, and a non-empty host component. This gives immediate feedback
+// in the TUI without a round-trip to the backend.
 func validateURL(urlStr string) error {
 	if urlStr == "" {
 		return fmt.Errorf("URL cannot be empty")
@@ -73,6 +90,10 @@ func validateURL(urlStr string) error {
 	return nil
 }
 
+// validateAlias performs lightweight client-side alias validation. It mirrors
+// the server-side rules (min 3 chars, max 50 chars, URL-safe characters) but
+// does not check reserved words or profanity -- that is the server's job.
+// An empty alias is valid because it means "use auto-generated code".
 func validateAlias(alias string) error {
 	if alias == "" {
 		return nil
@@ -97,6 +118,9 @@ func validateAlias(alias string) error {
 	return nil
 }
 
+// createURLCmd returns a Bubble Tea Cmd that calls either CreateCustomURL
+// (when an alias is provided) or CreateURL (for auto-generated codes) in a
+// background goroutine. The default expiration is set to 3 days from now.
 func createURLCmd(c *client.Client, longURL, alias string) tea.Cmd {
 	return func() tea.Msg {
 		expiresAt := time.Now().Add(3 * 24 * time.Hour).Unix()
@@ -128,6 +152,10 @@ func createURLCmd(c *client.Client, longURL, alias string) tea.Cmd {
 	}
 }
 
+// copyToClipboard copies text to the system clipboard using a platform-
+// specific command (pbcopy on macOS, xclip on Linux, clip on Windows).
+// The copy runs in a background goroutine and dispatches a success or
+// error message on completion.
 func copyToClipboard(text string) tea.Cmd {
 	return func() tea.Msg {
 		var cmd *exec.Cmd
@@ -167,6 +195,9 @@ func copyToClipboard(text string) tea.Cmd {
 	}
 }
 
+// Update handles the create-URL form interaction: Tab to switch fields,
+// Enter to validate and submit, Shift+C to copy the result, and ctrl+l
+// to clear all fields and start over.
 func (m *CreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case createURLSuccessMsg:
@@ -248,6 +279,9 @@ func (m *CreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the URL creation form with the long-URL and optional alias
+// inputs, a loading spinner, the resulting short URL (with copy hint), and
+// any validation or server errors.
 func (m *CreateModel) View() string {
 	var b strings.Builder
 

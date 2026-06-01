@@ -9,6 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// loginSuccessMsg is dispatched when the gRPC Login RPC succeeds. The parent
+// Model intercepts it to update global auth state and persist the session.
 type loginSuccessMsg struct {
 	token  string
 	userID string
@@ -16,33 +18,46 @@ type loginSuccessMsg struct {
 	name   string
 }
 
+// loginErrorMsg carries a login failure back to the LoginModel so it can
+// display the error inline without crashing.
 type loginErrorMsg struct {
 	err error
 }
 
+// LoginModel manages the login form state: two text inputs (email, password),
+// a focus tracker, loading flag, and any error from the last attempt.
+// Input is handled character-by-character because Bubble Tea does not ship
+// a built-in text-input component with password masking that fits the
+// custom styling used here.
 type LoginModel struct {
 	emailInput    string
 	passwordInput string
-	focusedInput  int
+	focusedInput  int // 0 = email, 1 = password
 	loading       bool
 	err           error
 	authClient    *client.AuthClient
 }
 
+// NewLoginModel creates a LoginModel with the email field focused.
 func NewLoginModel() *LoginModel {
 	return &LoginModel{
 		focusedInput: 0,
 	}
 }
 
+// SetAuthClient wires the gRPC auth client into the model after construction.
 func (m *LoginModel) SetAuthClient(c *client.AuthClient) {
 	m.authClient = c
 }
 
+// Init satisfies the tea.Model interface; no startup command is needed.
 func (m *LoginModel) Init() tea.Cmd {
 	return nil
 }
 
+// loginCmd returns a Bubble Tea Cmd that performs the gRPC login call in a
+// background goroutine. On completion it dispatches either loginSuccessMsg
+// or loginErrorMsg back into the Update loop.
 func loginCmd(c *client.AuthClient, email, password string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := c.Login(email, password)
@@ -59,6 +74,9 @@ func loginCmd(c *client.AuthClient, email, password string) tea.Cmd {
 	}
 }
 
+// Update handles login form interaction: Tab to switch fields, Enter to
+// submit, Backspace to delete, and ctrl+l to clear. While loading, all
+// key input is ignored to prevent double-submission.
 func (m *LoginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case loginSuccessMsg:
@@ -120,6 +138,9 @@ func (m *LoginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the login form inside a rounded border with email and
+// password fields, a loading indicator, inline error display, and a
+// help bar showing available keyboard shortcuts.
 func (m *LoginModel) View() string {
 	var b strings.Builder
 

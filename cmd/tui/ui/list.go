@@ -10,23 +10,32 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// URLItem is a display-ready representation of a shortened URL. Timestamps
+// are pre-formatted as human-readable relative strings ("5 min ago",
+// "3 days ago") so the View() method does not need any time arithmetic.
 type URLItem struct {
 	ShortCode string
 	ShortURL  string
 	LongURL   string
 	Clicks    int64
-	CreatedAt string
-	ExpiresIn string
+	CreatedAt string // human-readable relative time
+	ExpiresIn string // human-readable time until expiry, or "Never"/"Expired"
 }
 
+// listURLsSuccessMsg carries the fetched URL list back to the ListModel.
 type listURLsSuccessMsg struct {
 	urls []URLItem
 }
 
+// listURLsErrorMsg carries a list-fetch failure.
 type listURLsErrorMsg struct {
 	err error
 }
 
+// ListModel manages the paginated URL list view. It fetches all the user's
+// URLs in one gRPC call (up to 100) and paginates client-side with a
+// configurable page size (currently 3 cards per page). This avoids repeated
+// network calls when the user pages back and forth.
 type ListModel struct {
 	urls    []URLItem
 	cursor  int
@@ -35,13 +44,16 @@ type ListModel struct {
 	loading bool
 	err     error
 	client  *client.Client
-	loaded  bool
+	loaded  bool // prevents re-fetching when navigating back to this view
 }
 
+// Init satisfies the tea.Model interface; no startup command is needed.
 func (m *ListModel) Init() tea.Cmd {
 	return nil
 }
 
+// NewListModel creates a ListModel with an empty URL list and 3 items
+// per page, which fits comfortably on most terminal heights.
 func NewListModel() *ListModel {
 	return &ListModel{
 		urls:    []URLItem{},
@@ -50,10 +62,13 @@ func NewListModel() *ListModel {
 	}
 }
 
+// SetClient wires the gRPC URL client into the model.
 func (m *ListModel) SetClient(c *client.Client) {
 	m.client = c
 }
 
+// truncate shortens a string to maxLen characters, appending "..." if
+// it was truncated. Used for long URLs that would break the card layout.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -61,6 +76,8 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+// listURLsCmd fetches the user's URLs via gRPC and transforms the protobuf
+// response into display-ready URLItem structs with human-readable timestamps.
 func listURLsCmd(c *client.Client) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := c.ListURLs(100, 0)
@@ -114,6 +131,9 @@ func listURLsCmd(c *client.Client) tea.Cmd {
 	}
 }
 
+// Update handles list navigation (up/down to move cursor, left/right to
+// change page, r to refresh). The list auto-fetches on first render when
+// loaded is false and a client is available.
 func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case listURLsSuccessMsg:
@@ -172,6 +192,9 @@ func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the URL list as a stack of card-style panels, each showing
+// the short URL, original URL (truncated), click count, creation time, and
+// expiry status. The currently selected card has an accent-colored border.
 func (m *ListModel) View() string {
 	var b strings.Builder
 

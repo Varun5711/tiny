@@ -1,3 +1,14 @@
+// Package ui implements the Bubble Tea model and views for the Tiny TUI
+// client. It follows the Elm Architecture: a single top-level Model holds
+// the application state (current view, sub-models for each screen, auth
+// credentials), and the Update method routes messages to the active view's
+// sub-model. View rendering is delegated to per-screen View() methods that
+// use Lipgloss for styling.
+//
+// Navigation works as a simple state machine: the currentView field
+// determines which sub-model receives updates and which View() is rendered.
+// Global key bindings (ctrl+c to quit, q to go back, ctrl+s to toggle
+// login/signup) are handled at the top level before delegation.
 package ui
 
 import (
@@ -10,6 +21,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// View enumerates the screens the TUI can display. The iota ordering
+// matches the typical user flow: login -> signup -> menu -> actions.
 type View int
 
 const (
@@ -21,6 +34,10 @@ const (
 	AnalyticsView
 )
 
+// SessionData is the JSON structure persisted to ~/.tiny_session.json.
+// Storing the token locally lets the TUI skip the login screen on
+// subsequent launches. The file is written with 0600 permissions to
+// prevent other users on the same machine from reading the JWT.
 type SessionData struct {
 	Token     string `json:"token"`
 	UserID    string `json:"user_id"`
@@ -28,11 +45,15 @@ type SessionData struct {
 	UserEmail string `json:"user_email"`
 }
 
+// getSessionPath returns the absolute path to the session file in the
+// user's home directory.
 func getSessionPath() string {
 	homeDir, _ := os.UserHomeDir()
 	return filepath.Join(homeDir, ".tiny_session.json")
 }
 
+// saveSession writes authentication state to disk so the user does not
+// need to log in again on the next TUI launch.
 func saveSession(data SessionData) error {
 	sessionPath := getSessionPath()
 	jsonData, err := json.Marshal(data)
@@ -42,6 +63,9 @@ func saveSession(data SessionData) error {
 	return os.WriteFile(sessionPath, jsonData, 0600)
 }
 
+// loadSession reads a previously saved session from disk. Returns an error
+// if the file does not exist or is malformed, which the caller treats as
+// "not logged in".
 func loadSession() (*SessionData, error) {
 	sessionPath := getSessionPath()
 	jsonData, err := os.ReadFile(sessionPath)
@@ -56,11 +80,17 @@ func loadSession() (*SessionData, error) {
 	return &data, nil
 }
 
+// clearSession deletes the persisted session file, effectively logging
+// the user out across TUI restarts.
 func clearSession() error {
 	sessionPath := getSessionPath()
 	return os.Remove(sessionPath)
 }
 
+// Model is the top-level Bubble Tea model. It owns every sub-model and
+// routes messages to the currently active view. Auth state (token, userID,
+// etc.) lives here rather than in individual views so that view transitions
+// can propagate credentials without coupling sub-models to each other.
 type Model struct {
 	currentView View
 	login       *LoginModel
@@ -83,6 +113,10 @@ type Model struct {
 	userEmail       string
 }
 
+// NewModel initializes the top-level Model with all sub-models and wires
+// the gRPC clients into the views that need them. If a valid session file
+// exists on disk, the user is automatically logged in and dropped into the
+// menu view, skipping the login screen entirely.
 func NewModel(grpcClient *client.Client, authClient *client.AuthClient) Model {
 	loginModel := NewLoginModel()
 	loginModel.SetAuthClient(authClient)
@@ -127,10 +161,18 @@ func NewModel(grpcClient *client.Client, authClient *client.AuthClient) Model {
 	return m
 }
 
+// Init satisfies the tea.Model interface. No initial commands are needed
+// because the first render is driven by the view state set in NewModel.
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update is the central message router. It handles three categories:
+//  1. Window resize events -- stored for responsive layout.
+//  2. Auth success messages -- bubble up from login/signup sub-models to
+//     update the top-level auth state and persist the session.
+//  3. Key events -- global shortcuts (quit, back, toggle login/signup)
+//     are intercepted before delegating to the active sub-model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -280,6 +322,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the active screen with an optional status bar showing the
+// logged-in user's name and email. The status bar appears on all
+// authenticated views but is hidden on login/signup to keep those screens
+// clean.
 func (m Model) View() string {
 	// Status bar (shown when authenticated)
 	var statusBar string

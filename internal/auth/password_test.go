@@ -4,6 +4,9 @@ import (
 	"testing"
 )
 
+// TestHashPassword verifies that HashPassword produces a non-empty hash
+// that differs from the plaintext input (ensuring the password is not
+// stored in the clear).
 func TestHashPassword(t *testing.T) {
 	password := "securePassword123"
 
@@ -21,6 +24,10 @@ func TestHashPassword(t *testing.T) {
 	}
 }
 
+// TestHashPassword_DifferentHashes confirms that bcrypt's random salt causes
+// two hashes of the same password to differ. This is a critical property:
+// if two users choose the same password, their stored hashes must not match,
+// preventing an attacker from identifying shared passwords in a database dump.
 func TestHashPassword_DifferentHashes(t *testing.T) {
 	password := "securePassword123"
 
@@ -39,6 +46,8 @@ func TestHashPassword_DifferentHashes(t *testing.T) {
 	}
 }
 
+// TestCheckPassword_Correct verifies the happy path: a password should match
+// its own hash.
 func TestCheckPassword_Correct(t *testing.T) {
 	password := "securePassword123"
 
@@ -53,6 +62,9 @@ func TestCheckPassword_Correct(t *testing.T) {
 	}
 }
 
+// TestCheckPassword_Incorrect verifies that a wrong password is rejected,
+// ensuring the comparison is actually checking the password content and not
+// just the hash format.
 func TestCheckPassword_Incorrect(t *testing.T) {
 	password := "securePassword123"
 	wrongPassword := "wrongPassword456"
@@ -68,6 +80,8 @@ func TestCheckPassword_Incorrect(t *testing.T) {
 	}
 }
 
+// TestCheckPassword_EmptyPassword ensures that an empty string does not
+// accidentally match a non-empty password's hash.
 func TestCheckPassword_EmptyPassword(t *testing.T) {
 	password := "securePassword123"
 
@@ -82,6 +96,10 @@ func TestCheckPassword_EmptyPassword(t *testing.T) {
 	}
 }
 
+// TestHashPassword_EmptyPassword verifies that hashing an empty string
+// succeeds (bcrypt does not reject empty inputs) and produces a non-empty
+// hash. Whether to allow empty passwords is a policy decision enforced
+// at a higher layer; the hash function itself should handle any input.
 func TestHashPassword_EmptyPassword(t *testing.T) {
 	hash, err := HashPassword("")
 	if err != nil {
@@ -93,6 +111,8 @@ func TestHashPassword_EmptyPassword(t *testing.T) {
 	}
 }
 
+// TestCheckPassword_InvalidHash ensures that a malformed hash string (not
+// valid bcrypt output) produces an error rather than a false positive match.
 func TestCheckPassword_InvalidHash(t *testing.T) {
 	err := CheckPassword("not-a-valid-bcrypt-hash", "password")
 	if err == nil {

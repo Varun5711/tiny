@@ -4,27 +4,41 @@ import (
 	"net/http"
 )
 
+// SwaggerHandler serves the interactive API documentation UI and the raw
+// OpenAPI specification file. It uses the swagger-ui-dist CDN bundle so the
+// gateway binary does not need to embed any static assets beyond the spec YAML.
 type SwaggerHandler struct {
-	specPath string
+	specPath string // specPath is the filesystem path to the OpenAPI YAML spec file.
 }
 
+// NewSwaggerHandler creates a SwaggerHandler that reads the OpenAPI spec from
+// the given file path. The spec is served on each request (not cached), so
+// changes to the file are reflected without a restart.
 func NewSwaggerHandler(specPath string) *SwaggerHandler {
 	return &SwaggerHandler{
 		specPath: specPath,
 	}
 }
 
+// ServeSwaggerUI renders the Swagger UI single-page application. The HTML is
+// compiled into the binary as a constant to avoid filesystem dependencies for
+// the UI itself; only the OpenAPI spec is loaded from disk.
 func (h *SwaggerHandler) ServeSwaggerUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(swaggerUIHTML))
 }
 
+// ServeSpec serves the raw OpenAPI YAML specification. The Access-Control-Allow-Origin
+// header is set to "*" so the Swagger UI JavaScript (loaded from a CDN) can
+// fetch the spec without running into CORS restrictions.
 func (h *SwaggerHandler) ServeSpec(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	http.ServeFile(w, r, h.specPath)
 }
 
+// RegisterRoutes mounts the Swagger UI and spec endpoints on the given mux.
+// Both "/docs" and "/docs/" serve the UI to handle trailing-slash variance.
 func (h *SwaggerHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/docs", h.ServeSwaggerUI)
 	mux.HandleFunc("/docs/", h.ServeSwaggerUI)
