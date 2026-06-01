@@ -16,7 +16,7 @@ func NewSwaggerHandler(specPath string) *SwaggerHandler {
 
 func (h *SwaggerHandler) ServeSwaggerUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(swaggerUIHTML))
+	_, _ = w.Write([]byte(swaggerUIHTML))
 }
 
 func (h *SwaggerHandler) ServeSpec(w http.ResponseWriter, r *http.Request) {

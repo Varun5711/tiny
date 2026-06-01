@@ -4,68 +4,87 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+	"sync"
 	"time"
 
 	"github.com/Varun5711/shorternit/internal/clickhouse"
 	"github.com/Varun5711/shorternit/internal/config"
+	es "github.com/Varun5711/shorternit/internal/elasticsearch"
 	"github.com/Varun5711/shorternit/internal/enrichment"
 	"github.com/Varun5711/shorternit/internal/logger"
+	"github.com/Varun5711/shorternit/internal/tracing"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/fx"
 )
 
-var log *logger.Logger
+func provideConfig() (*config.Config, error) {
+	return config.Load()
+}
 
-func main() {
-	log = logger.New("pipeline-worker")
-	log.Info("Starting pipeline worker...")
+func provideLogger() *logger.Logger {
+	return logger.New("pipeline-worker")
+}
 
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatal("Failed to load config: %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	redisClient := redis.NewClient(&redis.Options{
+func provideRedisClient(cfg *config.Config) (*redis.Client, error) {
+	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-	defer redisClient.Close()
-
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		log.Fatal("Failed to connect to Redis: %v", err)
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
-	log.Info("Connected to Redis at %s", cfg.Redis.Addr)
+	return client, nil
+}
 
-	chClient, err := clickhouse.NewClient(cfg.ClickHouse)
+func provideClickHouseClient(cfg *config.Config) (*clickhouse.Client, error) {
+	return clickhouse.NewClient(cfg.ClickHouse)
+}
+
+func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
+	return tracing.InitTracer(tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		JaegerEndpoint: cfg.Tracing.JaegerEndpoint,
+		ServiceName:    "pipeline-worker",
+		ServiceVersion: "1.0.0",
+		SampleRate:     cfg.Tracing.SampleRate,
+	})
+}
+
+func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
+	if !cfg.Elasticsearch.Enabled {
+		return nil
+	}
+	client, err := es.NewClient(es.Config{
+		Addresses:   cfg.Elasticsearch.Addresses,
+		Username:    cfg.Elasticsearch.Username,
+		Password:    cfg.Elasticsearch.Password,
+		IndexPrefix: cfg.Elasticsearch.IndexPrefix,
+	})
 	if err != nil {
-		log.Fatal("Failed to connect to ClickHouse: %v", err)
+		log.Warn("Elasticsearch unavailable, running without indexing: %v", err)
+		return nil
 	}
-	defer chClient.Close()
-	log.Info("Connected to ClickHouse at %s", cfg.ClickHouse.Addr)
+	return client
+}
 
-	geoEnricher := enrichment.NewGeoIPEnricher()
-	defer geoEnricher.Close()
+func provideGeoEnricher() *enrichment.GeoIPEnricher {
+	return enrichment.NewGeoIPEnricher()
+}
 
-	err = redisClient.XGroupCreateMkStream(ctx, cfg.Redis.StreamName, cfg.Analytics.ConsumerGroup,
-		"0").Err()
-	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
-		log.Fatal("Failed to create consumer group: %v", err)
-	}
-	log.Info("Consumer group '%s' ready", cfg.Analytics.ConsumerGroup)
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	worker := &PipelineWorker{
+func providePipelineWorker(
+	redisClient *redis.Client,
+	chClient *clickhouse.Client,
+	esClient *es.Client,
+	geoEnricher *enrichment.GeoIPEnricher,
+	cfg *config.Config,
+) *PipelineWorker {
+	return &PipelineWorker{
 		redisClient:   redisClient,
 		chClient:      chClient,
+		esClient:      esClient,
 		geoEnricher:   geoEnricher,
 		streamName:    cfg.Redis.StreamName,
 		consumerGroup: cfg.Analytics.ConsumerGroup,
@@ -74,19 +93,57 @@ func main() {
 		pollInterval:  cfg.Analytics.PollInterval,
 		blockTime:     cfg.Analytics.BlockTime,
 	}
+}
 
-	go worker.Start(ctx)
+func registerLifecycle(
+	lc fx.Lifecycle,
+	worker *PipelineWorker,
+	tp *sdktrace.TracerProvider,
+	redisClient *redis.Client,
+	chClient *clickhouse.Client,
+	geoEnricher *enrichment.GeoIPEnricher,
+	cfg *config.Config,
+	log *logger.Logger,
+) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			err := redisClient.XGroupCreateMkStream(ctx, cfg.Redis.StreamName, cfg.Analytics.ConsumerGroup, "0").Err()
+			if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
+				return err
+			}
 
-	<-sigChan
-	log.Info("Shutting down pipeline worker...")
-	cancel()
-	time.Sleep(2 * time.Second)
-	log.Info("Pipeline worker stopped")
+			workerCtx, cancel := context.WithCancel(context.Background())
+			var wg sync.WaitGroup
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+				worker.Start(workerCtx, log)
+			}()
+
+			log.Info("Pipeline worker started")
+
+			lc.Append(fx.Hook{
+				OnStop: func(ctx context.Context) error {
+					log.Info("Shutting down pipeline worker...")
+					cancel()
+					wg.Wait()
+					_ = tracing.ShutdownTracer(ctx, tp)
+					_ = geoEnricher.Close()
+					_ = chClient.Close()
+					_ = redisClient.Close()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
 }
 
 type PipelineWorker struct {
 	redisClient   *redis.Client
 	chClient      *clickhouse.Client
+	esClient      *es.Client
 	geoEnricher   *enrichment.GeoIPEnricher
 	streamName    string
 	consumerGroup string
@@ -96,9 +153,7 @@ type PipelineWorker struct {
 	blockTime     time.Duration
 }
 
-func (w *PipelineWorker) Start(ctx context.Context) {
-	log.Info("Pipeline worker started (batch size: %d)", w.batchSize)
-
+func (w *PipelineWorker) Start(ctx context.Context, log *logger.Logger) {
 	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()
 
@@ -107,14 +162,14 @@ func (w *PipelineWorker) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := w.processBatch(ctx); err != nil {
+			if err := w.processBatch(ctx, log); err != nil {
 				log.Error("Failed to process batch: %v", err)
 			}
 		}
 	}
 }
 
-func (w *PipelineWorker) processBatch(ctx context.Context) error {
+func (w *PipelineWorker) processBatch(ctx context.Context, log *logger.Logger) error {
 	streams, err := w.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    w.consumerGroup,
 		Consumer: w.consumerName,
@@ -124,7 +179,7 @@ func (w *PipelineWorker) processBatch(ctx context.Context) error {
 	}).Result()
 
 	if err != nil {
-		if err == redis.Nil {
+		if err == redis.Nil || ctx.Err() != nil {
 			return nil
 		}
 		return fmt.Errorf("failed to read from stream: %w", err)
@@ -158,6 +213,33 @@ func (w *PipelineWorker) processBatch(ctx context.Context) error {
 		return fmt.Errorf("failed to insert events to ClickHouse: %w", err)
 	}
 
+	if w.esClient != nil {
+		esDocs := make([]es.ClickEventDocument, len(clickEvents))
+		for i, ce := range clickEvents {
+			esDocs[i] = es.ClickEventDocument{
+				EventID:     ce.EventID,
+				ShortCode:   ce.ShortCode,
+				OriginalURL: ce.OriginalURL,
+				ClickedAt:   ce.ClickedAt,
+				IPAddress:   ce.IPAddress,
+				Country:     ce.Country,
+				CountryCode: ce.CountryCode,
+				Region:      ce.Region,
+				City:        ce.City,
+				Latitude:    ce.Latitude,
+				Longitude:   ce.Longitude,
+				UserAgent:   ce.UserAgent,
+				Browser:     ce.Browser,
+				OS:          ce.OS,
+				DeviceType:  ce.DeviceType,
+				Referer:     ce.Referer,
+			}
+		}
+		if err := w.esClient.IndexClickEventsBulk(ctx, esDocs); err != nil {
+			log.Error("Failed to index click events to ES: %v", err)
+		}
+	}
+
 	for _, msgID := range messageIDs {
 		if err := w.redisClient.XAck(ctx, w.streamName, w.consumerGroup, msgID).Err(); err != nil {
 			log.Error("Failed to ack message %s: %v", msgID, err)
@@ -179,8 +261,12 @@ func (w *PipelineWorker) enrichEvent(fields map[string]interface{}) (*clickhouse
 
 	var clickedAt time.Time
 	if timestamp != "" {
-		timestampInt, _ := parseTimestamp(timestamp)
-		clickedAt = time.Unix(timestampInt, 0)
+		var ts int64
+		if err := json.Unmarshal([]byte(timestamp), &ts); err == nil {
+			clickedAt = time.Unix(ts, 0)
+		} else {
+			clickedAt = time.Now()
+		}
 	} else {
 		clickedAt = time.Now()
 	}
@@ -234,10 +320,18 @@ func (w *PipelineWorker) enrichEvent(fields map[string]interface{}) (*clickhouse
 	}, nil
 }
 
-func parseTimestamp(s string) (int64, error) {
-	var ts int64
-	if err := json.Unmarshal([]byte(s), &ts); err != nil {
-		return 0, err
-	}
-	return ts, nil
+func main() {
+	fx.New(
+		fx.Provide(
+			provideConfig,
+			provideLogger,
+			provideTracerProvider,
+			provideRedisClient,
+			provideClickHouseClient,
+			provideESClient,
+			provideGeoEnricher,
+			providePipelineWorker,
+		),
+		fx.Invoke(registerLifecycle),
+	).Run()
 }

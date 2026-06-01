@@ -36,7 +36,7 @@ func TestNewGenerator(t *testing.T) {
 					t.Errorf("unexpected error: %v", err)
 				}
 				if gen == nil {
-					t.Error("generator is nil")
+					t.Fatal("generator is nil")
 				}
 				if gen.datacenterID != tt.datacenterID {
 					t.Errorf("datacenterID = %d, want %d", gen.datacenterID, tt.datacenterID)

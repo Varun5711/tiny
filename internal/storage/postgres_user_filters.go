@@ -3,15 +3,11 @@ package storage
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/Varun5711/shorternit/internal/models"
 )
 
-func (s *PostgresStorage) ListByUserID(userID string) ([]*models.URL, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
+func (s *PostgresStorage) ListByUserID(ctx context.Context, userID string) ([]*models.URL, error) {
 	query := `
 		SELECT short_code, long_url, clicks, created_at, expires_at, COALESCE(qr_code, ''), COALESCE(user_id, '')
 		FROM urls

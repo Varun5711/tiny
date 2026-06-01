@@ -3,7 +3,9 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -76,7 +78,7 @@ func (rl *RateLimiter) allowRequest(ctx context.Context, key string) (bool, int,
 		var resetTime time.Time
 		if len(results) > 0 {
 			var oldestTimestamp int64
-			fmt.Sscanf(results[0], "%d", &oldestTimestamp)
+			_, _ = fmt.Sscanf(results[0], "%d", &oldestTimestamp)
 			resetTime = time.Unix(0, oldestTimestamp).Add(rl.window)
 		} else {
 			resetTime = now.Add(rl.window)
@@ -96,15 +98,23 @@ func (rl *RateLimiter) allowRequest(ctx context.Context, key string) (bool, int,
 }
 
 func getClientIP(r *http.Request) string {
-	forwarded := r.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		return forwarded
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		ip := strings.TrimSpace(parts[0])
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
 	}
 
-	realIP := r.Header.Get("X-Real-IP")
-	if realIP != "" {
-		return realIP
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		if net.ParseIP(realIP) != nil {
+			return realIP
+		}
 	}
 
-	return r.RemoteAddr
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

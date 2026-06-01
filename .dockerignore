@@ -1,0 +1,13 @@
+.git/
+docs/
+deployments/
+scripts/
+test/
+*.md
+.env*
+.github/
+build/
+cmd/tui/
+.dockerignore
+.gitignore
+api-gateway

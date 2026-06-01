@@ -8,13 +8,16 @@ import (
 )
 
 type Storage interface {
-	Save(url *models.URL) error
-	GetByShortCode(shortCode string) (*models.URL, error)
-	IncrementClicks(shortCode string) error
-	List() ([]*models.URL, error)
-	ListByUserID(userID string) ([]*models.URL, error)
+	Save(ctx context.Context, url *models.URL) error
+	GetByShortCode(ctx context.Context, shortCode string) (*models.URL, error)
+	IncrementClicks(ctx context.Context, shortCode string) error
+	List(ctx context.Context) ([]*models.URL, error)
+	ListByUserID(ctx context.Context, userID string) ([]*models.URL, error)
 	AliasExists(ctx context.Context, alias string) (bool, error)
 	AliasExistsPrimary(ctx context.Context, alias string) (bool, error)
 	CreateCustomURL(ctx context.Context, alias, longURL string, expiresAt *time.Time, qrCode, userID string) error
+	Delete(ctx context.Context, shortCode string) error
 	DeleteExpiredURLs(ctx context.Context) (int64, error)
+	ListPaginated(ctx context.Context, limit, offset int32) ([]*models.URL, int32, error)
+	ListByUserIDPaginated(ctx context.Context, userID string, limit, offset int32) ([]*models.URL, int32, error)
 }

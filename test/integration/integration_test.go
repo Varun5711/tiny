@@ -38,7 +38,7 @@ func TestHealthCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("health check failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -57,7 +57,7 @@ func TestUserRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registration request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 201 or 200, got %d", resp.StatusCode)
@@ -84,7 +84,7 @@ func TestUserLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -123,7 +123,7 @@ func TestCreateURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create URL request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 201 or 200, got %d", resp.StatusCode)
@@ -160,7 +160,7 @@ func TestCreateCustomURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create custom URL request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 201 or 200, got %d", resp.StatusCode)
@@ -189,7 +189,7 @@ func TestListURLs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list URLs request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -224,10 +224,10 @@ func TestRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create URL request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var createResult map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&createResult)
+	_ = json.NewDecoder(resp.Body).Decode(&createResult)
 
 	shortCode, ok := createResult["short_code"].(string)
 	if !ok {
@@ -244,7 +244,7 @@ func TestRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("redirect request failed: %v", err)
 	}
-	defer redirectResp.Body.Close()
+	defer func() { _ = redirectResp.Body.Close() }()
 
 	if redirectResp.StatusCode != http.StatusFound && redirectResp.StatusCode != http.StatusMovedPermanently {
 		t.Errorf("expected redirect status (301/302), got %d", redirectResp.StatusCode)
@@ -264,7 +264,7 @@ func TestUnauthorizedAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected status 401, got %d", resp.StatusCode)
@@ -290,7 +290,7 @@ func TestInvalidURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400 for invalid URL, got %d", resp.StatusCode)
@@ -302,7 +302,7 @@ func TestNotFoundShortCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", resp.StatusCode)

@@ -35,7 +35,9 @@ func NewClient(cfg config.ClickHouseConfig) (*Client, error) {
 		return nil, fmt.Errorf("failed to connect to clickhouse: %w", err)
 	}
 
-	if err := conn.Ping(context.Background()); err != nil {
+	pingCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := conn.Ping(pingCtx); err != nil {
 		return nil, fmt.Errorf("failed to ping clickhouse: %w", err)
 	}
 
@@ -162,7 +164,7 @@ func (c *Client) GetClickEvents(ctx context.Context, shortCode string, limit int
 	if err != nil {
 		return nil, fmt.Errorf("failed to query click events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []ClickEvent
 	for rows.Next() {
@@ -214,7 +216,7 @@ func (c *Client) GetAllClickEvents(ctx context.Context, limit int) ([]ClickEvent
 	if err != nil {
 		return nil, fmt.Errorf("failed to query click events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []ClickEvent
 	for rows.Next() {
