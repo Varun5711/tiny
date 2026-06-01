@@ -1,3 +1,24 @@
+// Package main implements the pipeline worker for the Tiny URL shortener.
+//
+// The pipeline worker is a background consumer that reads raw click events
+// from the same Redis Stream as the analytics-worker but performs a richer
+// enrichment pipeline before storing the results:
+//
+//  1. GeoIP lookup -- resolves the client IP address to country, region,
+//     city, and coordinates using a local MaxMind database.
+//  2. User-agent parsing -- extracts browser, OS, and device type from
+//     the raw UA string.
+//  3. ClickHouse insertion -- writes the fully enriched event into the
+//     OLAP store for fast analytical queries (timeline, geo heatmaps,
+//     device breakdowns).
+//  4. Elasticsearch indexing (optional) -- indexes click events for
+//     full-text search and ad-hoc exploration.
+//
+// This worker operates as a Redis consumer group member, so it can scale
+// horizontally and will automatically re-process pending events after a
+// crash.
+//
+// Dependency injection is managed by Uber FX.
 package main
 
 import (
@@ -19,14 +40,22 @@ import (
 	"go.uber.org/fx"
 )
 
+// provideConfig loads the unified application configuration from environment
+// variables and config files.
 func provideConfig() (*config.Config, error) {
 	return config.Load()
 }
 
+// provideLogger creates a structured logger tagged with "pipeline-worker"
+// so log output is identifiable in centralized logging.
 func provideLogger() *logger.Logger {
 	return logger.New("pipeline-worker")
 }
 
+// provideRedisClient connects directly to Redis using the go-redis client
+// (not the internal wrapper) because this worker only needs raw Stream
+// consumer group operations and does not use the higher-level RedisClient
+// abstractions.
 func provideRedisClient(cfg *config.Config) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
@@ -39,10 +68,16 @@ func provideRedisClient(cfg *config.Config) (*redis.Client, error) {
 	return client, nil
 }
 
+// provideClickHouseClient connects to ClickHouse, the columnar OLAP store
+// where enriched click events are inserted in batches. ClickHouse powers
+// the analytics dashboards served by the API gateway.
 func provideClickHouseClient(cfg *config.Config) (*clickhouse.Client, error) {
 	return clickhouse.NewClient(cfg.ClickHouse)
 }
 
+// provideTracerProvider initializes OpenTelemetry distributed tracing and
+// exports spans to Jaeger, giving visibility into enrichment and batch
+// insert latency.
 func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
 	return tracing.InitTracer(tracing.Config{
 		Enabled:        cfg.Tracing.Enabled,
@@ -53,6 +88,9 @@ func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error)
 	})
 }
 
+// provideESClient optionally connects to Elasticsearch for indexing enriched
+// click events. When ES is disabled or unreachable, the worker still
+// functions -- events are stored in ClickHouse but are not searchable via ES.
 func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
 	if !cfg.Elasticsearch.Enabled {
 		return nil
@@ -70,10 +108,17 @@ func provideESClient(cfg *config.Config, log *logger.Logger) *es.Client {
 	return client
 }
 
+// provideGeoEnricher creates a GeoIP enricher backed by a local MaxMind
+// database. IP-to-location resolution happens entirely in-process, avoiding
+// external API calls and keeping enrichment fast.
 func provideGeoEnricher() *enrichment.GeoIPEnricher {
 	return enrichment.NewGeoIPEnricher()
 }
 
+// providePipelineWorker assembles the worker with all its dependencies:
+// Redis for event consumption, ClickHouse and Elasticsearch for storage,
+// and the GeoIP enricher for IP resolution. Configuration values control
+// batch size, poll interval, and consumer group identity.
 func providePipelineWorker(
 	redisClient *redis.Client,
 	chClient *clickhouse.Client,
@@ -95,6 +140,11 @@ func providePipelineWorker(
 	}
 }
 
+// registerLifecycle wires the pipeline worker into the FX lifecycle. On
+// start, it ensures the Redis consumer group exists, then launches the
+// worker loop in a background goroutine. On stop, it cancels the context,
+// waits for the goroutine to finish its current batch, then closes
+// tracing, GeoIP database, ClickHouse, and Redis connections in order.
 func registerLifecycle(
 	lc fx.Lifecycle,
 	worker *PipelineWorker,
@@ -140,6 +190,10 @@ func registerLifecycle(
 	})
 }
 
+// PipelineWorker holds the dependencies and configuration for the click
+// enrichment pipeline. It consumes raw click events from a Redis Stream,
+// enriches them with GeoIP and user-agent data, and writes the results
+// to ClickHouse (and optionally Elasticsearch).
 type PipelineWorker struct {
 	redisClient   *redis.Client
 	chClient      *clickhouse.Client
@@ -153,6 +207,9 @@ type PipelineWorker struct {
 	blockTime     time.Duration
 }
 
+// Start runs the main processing loop on a configurable ticker. Each tick
+// calls processBatch, which reads, enriches, and stores one batch of
+// events. The loop exits when the context is cancelled during shutdown.
 func (w *PipelineWorker) Start(ctx context.Context, log *logger.Logger) {
 	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()
@@ -169,6 +226,11 @@ func (w *PipelineWorker) Start(ctx context.Context, log *logger.Logger) {
 	}
 }
 
+// processBatch reads up to batchSize messages from the Redis Stream,
+// enriches each event (GeoIP + UA parsing), batch-inserts into ClickHouse,
+// optionally bulk-indexes into Elasticsearch, and acknowledges consumed
+// messages. Errors during ClickHouse insertion halt the batch so messages
+// remain unacknowledged and will be redelivered on the next attempt.
 func (w *PipelineWorker) processBatch(ctx context.Context, log *logger.Logger) error {
 	streams, err := w.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    w.consumerGroup,
@@ -250,6 +312,10 @@ func (w *PipelineWorker) processBatch(ctx context.Context, log *logger.Logger) e
 	return nil
 }
 
+// enrichEvent transforms a raw Redis Stream message into a fully populated
+// ClickEvent. It extracts fields from the message map, resolves the IP to
+// a geographic location via GeoIP, parses the user-agent string into
+// browser/OS/device components, and assigns a UUID as the event ID.
 func (w *PipelineWorker) enrichEvent(fields map[string]interface{}) (*clickhouse.ClickEvent, error) {
 	shortCode, _ := fields["short_code"].(string)
 	timestamp, _ := fields["timestamp"].(string)
@@ -320,6 +386,13 @@ func (w *PipelineWorker) enrichEvent(fields map[string]interface{}) (*clickhouse
 	}, nil
 }
 
+// main assembles the complete FX dependency graph for the pipeline worker.
+//
+// The graph connects Redis (event source), ClickHouse and Elasticsearch
+// (event sinks), and the GeoIP enricher into a PipelineWorker that is
+// started by registerLifecycle. There is no HTTP or gRPC server -- this is
+// a pure stream consumer. Run() blocks until a termination signal is
+// received.
 func main() {
 	fx.New(
 		fx.Provide(

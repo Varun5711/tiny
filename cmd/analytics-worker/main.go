@@ -1,3 +1,16 @@
+// Package main implements the analytics worker for the Tiny URL shortener.
+//
+// The analytics worker is a background consumer that reads click events
+// from a Redis Stream (published by the redirect-service) and increments
+// per-URL click counters in PostgreSQL. It runs as part of a Redis consumer
+// group, which means multiple instances can share the workload and pick up
+// where a crashed peer left off.
+//
+// This worker handles the lightweight "aggregate counts" path. For the
+// richer enrichment pipeline (GeoIP lookup, user-agent parsing, ClickHouse
+// and Elasticsearch storage), see cmd/pipeline-worker.
+//
+// Dependency injection is managed by Uber FX.
 package main
 
 import (
@@ -15,6 +28,9 @@ import (
 	"go.uber.org/fx"
 )
 
+// WorkerParams bundles the Redis Stream consumer configuration into a
+// single injectable value. Extracting these from *config.Config avoids
+// passing the entire config to the event-processing loop.
 type WorkerParams struct {
 	StreamName    string
 	ConsumerGroup string
@@ -24,14 +40,20 @@ type WorkerParams struct {
 	BlockTime     time.Duration
 }
 
+// provideConfig loads the unified application configuration from environment
+// variables and config files.
 func provideConfig() (*config.Config, error) {
 	return config.Load()
 }
 
+// provideLogger creates a structured logger tagged with "analytics-worker"
+// so log output is identifiable in centralized logging.
 func provideLogger() *logger.Logger {
 	return logger.New("analytics-worker")
 }
 
+// provideRedisClient connects to the shared Redis instance. Redis is the
+// source of click events (via Streams) that this worker consumes.
 func provideRedisClient(cfg *config.Config) (*redis.RedisClient, error) {
 	return redis.NewRedisClient(context.Background(), redis.Config{
 		Addr:     cfg.Redis.Addr,
@@ -40,6 +62,9 @@ func provideRedisClient(cfg *config.Config) (*redis.RedisClient, error) {
 	})
 }
 
+// provideDBManager sets up a PostgreSQL connection pool. The analytics
+// worker only writes to the primary: it increments click counters in the
+// urls table via batch UPDATE statements.
 func provideDBManager(cfg *config.Config) (*database.DBManager, error) {
 	return database.NewDBManager(context.Background(), database.Config{
 		PrimaryDSN:      cfg.Database.PrimaryDSN,
@@ -51,6 +76,9 @@ func provideDBManager(cfg *config.Config) (*database.DBManager, error) {
 	})
 }
 
+// provideTracerProvider initializes OpenTelemetry distributed tracing and
+// exports spans to Jaeger, enabling visibility into batch processing
+// latency and database write performance.
 func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error) {
 	return tracing.InitTracer(tracing.Config{
 		Enabled:        cfg.Tracing.Enabled,
@@ -61,6 +89,10 @@ func provideTracerProvider(cfg *config.Config) (*sdktrace.TracerProvider, error)
 	})
 }
 
+// provideWorkerParams extracts Redis Stream consumer settings from the
+// config into a dedicated struct. BatchSize and BlockTime control the
+// trade-off between latency (smaller batches) and throughput (larger
+// batches with longer blocking reads).
 func provideWorkerParams(cfg *config.Config) WorkerParams {
 	return WorkerParams{
 		StreamName:    cfg.Redis.StreamName,
@@ -72,6 +104,12 @@ func provideWorkerParams(cfg *config.Config) WorkerParams {
 	}
 }
 
+// registerLifecycle wires the worker into the FX lifecycle. On start, it
+// ensures the Redis consumer group exists (creating the stream if needed),
+// then launches the event processing loop in a background goroutine. On
+// stop, it cancels the worker context and waits for the goroutine to drain,
+// ensuring no events are lost mid-batch before closing infrastructure
+// connections.
 func registerLifecycle(
 	lc fx.Lifecycle,
 	redisClient *redis.RedisClient,
@@ -115,6 +153,11 @@ func registerLifecycle(
 	})
 }
 
+// processEvents is the main event loop. It performs a blocking XREADGROUP
+// on the Redis Stream, batches messages by short code to minimize database
+// round-trips, updates click counts in a single transaction, and
+// acknowledges consumed messages. On transient errors it backs off by
+// PollInterval before retrying.
 func processEvents(ctx context.Context, client *redislib.Client, dbManager *database.DBManager, params WorkerParams, log *logger.Logger) {
 	for {
 		select {
@@ -175,6 +218,9 @@ func processEvents(ctx context.Context, client *redislib.Client, dbManager *data
 	}
 }
 
+// updateClickCounts applies batched click increments to the urls table
+// inside a single transaction. Grouping by short code avoids issuing one
+// UPDATE per message, which would be prohibitively slow under high traffic.
 func updateClickCounts(ctx context.Context, dbManager *database.DBManager, clickCounts map[string]int) error {
 	tx, err := dbManager.Write().Begin(ctx)
 	if err != nil {
@@ -195,6 +241,13 @@ func updateClickCounts(ctx context.Context, dbManager *database.DBManager, click
 	return tx.Commit(ctx)
 }
 
+// main assembles the complete FX dependency graph for the analytics worker.
+//
+// The graph is intentionally small: config, logging, tracing, Redis (event
+// source), Postgres (click count sink), and worker parameters. There is no
+// HTTP or gRPC server -- the worker is a pure consumer.
+// fx.Invoke(registerLifecycle) triggers graph construction and starts the
+// event loop. Run() blocks until a termination signal is received.
 func main() {
 	fx.New(
 		fx.Provide(
