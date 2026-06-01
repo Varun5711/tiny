@@ -11,12 +11,20 @@ import (
 	"github.com/Varun5711/shorternit/internal/logger"
 )
 
+// AnalyticsHandler serves click-analytics endpoints that read from ClickHouse.
+// It exposes aggregate stats (total clicks, timelines, geographic distribution,
+// device breakdowns, top referrers) as well as raw click event listings. All
+// queries are scoped by short code so users can only see analytics for their
+// own URLs (access control is enforced upstream by the auth middleware).
 type AnalyticsHandler struct {
 	analyticsService *analytics.Service
 	clickhouse       *clickhouse.Client
 	log              *logger.Logger
 }
 
+// NewAnalyticsHandler creates an AnalyticsHandler. The analytics.Service
+// provides pre-aggregated query methods, while the ClickHouse client is used
+// directly for raw click event retrieval.
 func NewAnalyticsHandler(service *analytics.Service, ch *clickhouse.Client) *AnalyticsHandler {
 	return &AnalyticsHandler{
 		analyticsService: service,
@@ -25,6 +33,9 @@ func NewAnalyticsHandler(service *analytics.Service, ch *clickhouse.Client) *Ana
 	}
 }
 
+// GetStats returns aggregate click statistics (total clicks, unique visitors,
+// etc.) for the given short code. The short code is extracted from the URL
+// path segment at position 2 (e.g. /api/analytics/{short_code}/stats).
 func (h *AnalyticsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	shortCode := extractShortCode(r.URL.Path)
 	if shortCode == "" {
@@ -42,6 +53,9 @@ func (h *AnalyticsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	respondAnalyticsJSON(w, stats)
 }
 
+// GetTimeline returns a day-by-day click count series for the given short code.
+// The optional "days" query parameter controls the lookback window (default 7).
+// This powers the click-over-time chart in the dashboard.
 func (h *AnalyticsHandler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	shortCode := extractShortCode(r.URL.Path)
 	if shortCode == "" {
@@ -66,6 +80,9 @@ func (h *AnalyticsHandler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	respondAnalyticsJSON(w, timeline)
 }
 
+// GetGeoStats returns click counts grouped by country/region for the given
+// short code. Geographic data is derived from IP-based GeoIP lookups
+// performed during click event ingestion.
 func (h *AnalyticsHandler) GetGeoStats(w http.ResponseWriter, r *http.Request) {
 	shortCode := extractShortCode(r.URL.Path)
 	if shortCode == "" {
@@ -83,6 +100,9 @@ func (h *AnalyticsHandler) GetGeoStats(w http.ResponseWriter, r *http.Request) {
 	respondAnalyticsJSON(w, geoStats)
 }
 
+// GetDeviceStats returns click counts grouped by browser, OS, and device type
+// for the given short code. User-Agent parsing is done at ingestion time by
+// the click event consumer.
 func (h *AnalyticsHandler) GetDeviceStats(w http.ResponseWriter, r *http.Request) {
 	shortCode := extractShortCode(r.URL.Path)
 	if shortCode == "" {
@@ -100,6 +120,9 @@ func (h *AnalyticsHandler) GetDeviceStats(w http.ResponseWriter, r *http.Request
 	respondAnalyticsJSON(w, deviceStats)
 }
 
+// GetReferrers returns the top referring domains for the given short code,
+// ranked by click count. The optional "limit" query parameter controls how
+// many referrers to return (default 10).
 func (h *AnalyticsHandler) GetReferrers(w http.ResponseWriter, r *http.Request) {
 	shortCode := extractShortCode(r.URL.Path)
 	if shortCode == "" {
@@ -124,6 +147,9 @@ func (h *AnalyticsHandler) GetReferrers(w http.ResponseWriter, r *http.Request) 
 	respondAnalyticsJSON(w, referrers)
 }
 
+// extractShortCode pulls the short code from a URL path like
+// "/api/analytics/{short_code}/..." by splitting on "/" and returning
+// the segment at index 2. Returns "" if the path is too short.
 func extractShortCode(path string) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) >= 3 {
@@ -132,11 +158,20 @@ func extractShortCode(path string) string {
 	return ""
 }
 
+// respondAnalyticsJSON is a convenience helper that serializes data as JSON
+// with the correct Content-Type header. It mirrors respondJSON but omits the
+// status code parameter since analytics endpoints always return 200 on success.
 func respondAnalyticsJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(data)
 }
 
+// GetClickEvents returns raw click event rows from ClickHouse. Unlike the
+// other analytics endpoints that return aggregates, this one provides
+// individual click records with full detail (IP, geo, device, referrer).
+// Query parameters:
+//   - short_code (optional) - filter to a specific short code; omit to get all
+//   - limit      (optional) - max rows, default 50, max 1000
 func (h *AnalyticsHandler) GetClickEvents(w http.ResponseWriter, r *http.Request) {
 	shortCode := r.URL.Query().Get("short_code")
 	limitStr := r.URL.Query().Get("limit")
@@ -152,6 +187,8 @@ func (h *AnalyticsHandler) GetClickEvents(w http.ResponseWriter, r *http.Request
 	var events []clickhouse.ClickEvent
 	var err error
 
+	// When short_code is provided, scope the query; otherwise return a
+	// global feed of recent click events across all short codes.
 	if shortCode != "" {
 		events, err = h.clickhouse.GetClickEvents(ctx, shortCode, limit)
 	} else {

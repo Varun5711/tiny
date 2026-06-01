@@ -5,6 +5,9 @@ import (
 	"testing"
 )
 
+// TestEncodeBasicCases verifies that Encode produces the expected base62
+// string for a representative set of inputs, including boundary values at
+// each digit transition (0, 9, 10, 35, 36, 61, 62) and larger numbers.
 func TestEncodeBasicCases(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -37,6 +40,9 @@ func TestEncodeBasicCases(t *testing.T) {
 	}
 }
 
+// TestDecodeBasicCases verifies that Decode correctly reverses the encoding
+// for valid inputs and returns appropriate errors for invalid characters
+// (symbols, spaces, punctuation) that fall outside the base62 alphabet.
 func TestDecodeBasicCases(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -83,6 +89,9 @@ func TestDecodeBasicCases(t *testing.T) {
 	}
 }
 
+// TestEncodeDecodeRoundTrip confirms the bijective property of the encoding:
+// for every input number, Encode followed by Decode must return the original
+// value. This guarantees zero collisions in the short URL code space.
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	testNumbers := []int64{
 		0, 1, 9, 10, 61, 62, 63, 100, 125,
@@ -109,6 +118,9 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDecodeInvalidCharacters ensures that all common non-alphanumeric
+// characters are properly rejected by Decode, including symbols, whitespace,
+// and escape characters that could appear in user-supplied short codes.
 func TestDecodeInvalidCharacters(t *testing.T) {
 	invalidStrings := []string{
 		"abc!",
@@ -132,6 +144,10 @@ func TestDecodeInvalidCharacters(t *testing.T) {
 	}
 }
 
+// TestEncodeLargeNumbers verifies that the encoder handles values at the
+// upper end of the int64 range, including math.MaxInt64. These values
+// represent the theoretical maximum Snowflake IDs and produce the longest
+// possible base62 strings (up to 11 characters).
 func TestEncodeLargeNumbers(t *testing.T) {
 	largeNumbers := []int64{
 		1000000000000,
@@ -156,12 +172,14 @@ func TestEncodeLargeNumbers(t *testing.T) {
 	}
 }
 
+// BenchmarkEncode measures encoding throughput for a medium-sized integer.
 func BenchmarkEncode(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Encode(1234567890)
 	}
 }
 
+// BenchmarkDecode measures decoding throughput for a medium-length string.
 func BenchmarkDecode(b *testing.B) {
 	encoded := Encode(1234567890)
 	b.ResetTimer()
@@ -170,12 +188,15 @@ func BenchmarkDecode(b *testing.B) {
 	}
 }
 
+// BenchmarkEncodeSmall measures encoding throughput for a small integer
+// (short output string), testing the minimal-allocation fast path.
 func BenchmarkEncodeSmall(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Encode(125)
 	}
 }
 
+// BenchmarkDecodeSmall measures decoding throughput for a short base62 string.
 func BenchmarkDecodeSmall(b *testing.B) {
 	encoded := Encode(125)
 	b.ResetTimer()
@@ -184,12 +205,17 @@ func BenchmarkDecodeSmall(b *testing.B) {
 	}
 }
 
+// BenchmarkEncodeLarge measures encoding throughput for math.MaxInt64, which
+// produces the longest possible base62 string and exercises the most loop
+// iterations.
 func BenchmarkEncodeLarge(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Encode(9223372036854775807)
 	}
 }
 
+// BenchmarkDecodeLarge measures decoding throughput for the longest possible
+// base62 string (11 characters for math.MaxInt64).
 func BenchmarkDecodeLarge(b *testing.B) {
 	encoded := Encode(9223372036854775807)
 	b.ResetTimer()

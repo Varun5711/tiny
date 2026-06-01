@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+// TestNewJWTManager verifies that the constructor correctly stores the secret
+// key and token duration in the returned manager instance.
 func TestNewJWTManager(t *testing.T) {
 	manager := NewJWTManager("test-secret", time.Hour)
 
@@ -19,6 +21,9 @@ func TestNewJWTManager(t *testing.T) {
 	}
 }
 
+// TestGenerateToken verifies that GenerateToken produces a non-empty token
+// string and an expiration time that is approximately tokenDuration from now
+// (with a 1-minute tolerance to account for test execution time).
 func TestGenerateToken(t *testing.T) {
 	manager := NewJWTManager("test-secret-key", time.Hour)
 
@@ -37,6 +42,8 @@ func TestGenerateToken(t *testing.T) {
 	}
 }
 
+// TestValidateToken_Valid confirms the happy path: a freshly generated token
+// should validate successfully and yield the correct UserID and Email claims.
 func TestValidateToken_Valid(t *testing.T) {
 	manager := NewJWTManager("test-secret-key", time.Hour)
 
@@ -58,6 +65,9 @@ func TestValidateToken_Valid(t *testing.T) {
 	}
 }
 
+// TestValidateToken_Expired verifies that tokens past their expiration time
+// are rejected. A negative duration (-1h) is used to create an already-expired
+// token without needing to manipulate the system clock.
 func TestValidateToken_Expired(t *testing.T) {
 	manager := NewJWTManager("test-secret-key", -time.Hour)
 
@@ -72,6 +82,9 @@ func TestValidateToken_Expired(t *testing.T) {
 	}
 }
 
+// TestValidateToken_InvalidSignature ensures that a token signed with one
+// secret key is rejected when validated with a different secret key. This
+// protects against tokens forged with a compromised or guessed key.
 func TestValidateToken_InvalidSignature(t *testing.T) {
 	manager1 := NewJWTManager("secret-key-1", time.Hour)
 	manager2 := NewJWTManager("secret-key-2", time.Hour)
@@ -87,6 +100,9 @@ func TestValidateToken_InvalidSignature(t *testing.T) {
 	}
 }
 
+// TestValidateToken_Malformed ensures that arbitrary strings that do not
+// conform to the JWT three-part structure (header.payload.signature) are
+// properly rejected.
 func TestValidateToken_Malformed(t *testing.T) {
 	manager := NewJWTManager("test-secret-key", time.Hour)
 
@@ -96,6 +112,8 @@ func TestValidateToken_Malformed(t *testing.T) {
 	}
 }
 
+// TestValidateToken_EmptyToken verifies that an empty string is rejected
+// rather than causing a panic or returning nil claims.
 func TestValidateToken_EmptyToken(t *testing.T) {
 	manager := NewJWTManager("test-secret-key", time.Hour)
 

@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// ClickEventDocument represents a single URL click event stored in
+// Elasticsearch. Each redirect through the shortener produces one of these
+// documents, enriched with geo-IP and user-agent data by the redirect handler
+// before indexing. The EventID is used as the ES document ID to guarantee
+// exactly-once semantics on retries.
 type ClickEventDocument struct {
 	EventID     string    `json:"event_id"`
 	ShortCode   string    `json:"short_code"`
@@ -27,6 +32,11 @@ type ClickEventDocument struct {
 	Referer     string    `json:"referer"`
 }
 
+// ClickSearchFilters defines the optional filter criteria for searching click
+// events. All fields are optional; when omitted, the corresponding filter
+// clause is not added to the Elasticsearch query. This allows the API layer
+// to build flexible filtered views (e.g. "all clicks from Germany on mobile
+// devices in the last 7 days").
 type ClickSearchFilters struct {
 	ShortCode string
 	Country   string
@@ -35,15 +45,22 @@ type ClickSearchFilters struct {
 	EndDate   *time.Time
 }
 
+// ClickSearchResult holds a page of click events together with the total
+// match count for pagination.
 type ClickSearchResult struct {
 	Events []ClickEventDocument `json:"events"`
 	Total  int64                `json:"total"`
 }
 
+// clickIndex returns the fully-qualified clicks index name (e.g. "tiny-clicks").
 func (c *Client) clickIndex() string {
 	return c.indexPrefix + "-clicks"
 }
 
+// IndexClickEvent indexes a single click event document. The EventID is used
+// as the document ID, making the operation idempotent -- if an event is
+// re-indexed due to a retry, it overwrites the previous version rather than
+// creating a duplicate.
 func (c *Client) IndexClickEvent(ctx context.Context, doc ClickEventDocument) error {
 	body, err := json.Marshal(doc)
 	if err != nil {
@@ -68,13 +85,28 @@ func (c *Client) IndexClickEvent(ctx context.Context, doc ClickEventDocument) er
 	return nil
 }
 
+// IndexClickEventsBulk indexes multiple click events in a single Elasticsearch
+// Bulk API call. This is the preferred path for high-throughput ingestion
+// because it amortizes the HTTP overhead across many documents.
+//
+// The Bulk API uses Newline-Delimited JSON (NDJSON) format, where each
+// operation consists of two consecutive JSON lines:
+//
+//	Line 1 (action/metadata): {"index": {"_index": "<name>", "_id": "<id>"}}
+//	Line 2 (document source): {"event_id": "...", "short_code": "...", ...}
+//
+// Each pair is separated by a newline (\n). The trailing newline after the
+// last document is required by the Bulk API spec. Using "index" as the action
+// means "create or replace", providing idempotency via the EventID.
 func (c *Client) IndexClickEventsBulk(ctx context.Context, docs []ClickEventDocument) error {
 	if len(docs) == 0 {
 		return nil
 	}
 
+	// Build the NDJSON payload: alternating action-metadata and document lines.
 	var buf bytes.Buffer
 	for _, doc := range docs {
+		// Action line: tells ES which index and document ID to target.
 		meta := map[string]interface{}{
 			"index": map[string]interface{}{
 				"_index": c.clickIndex(),
@@ -85,6 +117,7 @@ func (c *Client) IndexClickEventsBulk(ctx context.Context, docs []ClickEventDocu
 		buf.Write(metaLine)
 		buf.WriteByte('\n')
 
+		// Document line: the actual click event payload to store.
 		dataLine, err := json.Marshal(doc)
 		if err != nil {
 			return fmt.Errorf("failed to marshal click event: %w", err)
@@ -110,7 +143,34 @@ func (c *Client) IndexClickEventsBulk(ctx context.Context, docs []ClickEventDocu
 	return nil
 }
 
+// SearchClickEvents searches click events using a compound bool/must query.
+// Each non-empty filter adds a clause to the "must" array, so all specified
+// filters must match (logical AND).
+//
+// The Elasticsearch Query DSL structure produced is:
+//
+//	{
+//	  "query": {
+//	    "bool": {
+//	      "must": [
+//	        { "term": { "short_code": "abc123" } },   // exact match filter
+//	        { "term": { "country_code": "US" } },      // exact match filter
+//	        { "term": { "device_type": "mobile" } },   // exact match filter
+//	        { "range": { "clicked_at": { "gte": ..., "lte": ... } } }  // date range
+//	      ]
+//	    }
+//	  }
+//	}
+//
+// "term" queries perform exact (non-analyzed) matching, which is correct for
+// keyword fields like short_code and country_code. The "range" query supports
+// open-ended bounds -- either gte or lte can be omitted for one-sided ranges.
+//
+// When no filters are specified, a match_all query is used to return all
+// click events (useful for admin dashboards).
 func (c *Client) SearchClickEvents(ctx context.Context, filters ClickSearchFilters, limit, offset int) (*ClickSearchResult, error) {
+	// Build the bool/must clause list dynamically based on which filters
+	// the caller provided. Each non-empty filter becomes a "must" clause.
 	var musts []map[string]interface{}
 
 	if filters.ShortCode != "" {
@@ -131,6 +191,9 @@ func (c *Client) SearchClickEvents(ctx context.Context, filters ClickSearchFilte
 		})
 	}
 
+	// Range filter for clicked_at: supports open-ended bounds (gte-only,
+	// lte-only, or both) so callers can query "since date X" or "before
+	// date Y" without needing to specify both ends.
 	if filters.StartDate != nil || filters.EndDate != nil {
 		rangeFilter := map[string]interface{}{}
 		if filters.StartDate != nil {
@@ -152,6 +215,8 @@ func (c *Client) SearchClickEvents(ctx context.Context, filters ClickSearchFilte
 		},
 	}
 
+	// Use a bool/must compound query when filters exist; otherwise fall
+	// back to match_all to return everything (paginated by from/size).
 	if len(musts) > 0 {
 		query["query"] = map[string]interface{}{
 			"bool": map[string]interface{}{"must": musts},

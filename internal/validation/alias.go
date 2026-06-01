@@ -1,3 +1,8 @@
+// Package validation enforces business rules for user-supplied custom aliases
+// before they are persisted. It exists as a separate package (rather than
+// inline in the handler) so that the same rules can be applied in both the
+// API gateway and the gRPC URL service, keeping validation consistent
+// regardless of the entry point.
 package validation
 
 import (
@@ -6,6 +11,8 @@ import (
 	"strings"
 )
 
+// Sentinel errors for each validation failure mode. Callers can use
+// errors.Is() to present user-facing messages or map to HTTP status codes.
 var (
 	ErrAliasTooShort     = errors.New("alias must be at least 3 characters")
 	ErrAliasTooLong      = errors.New("alias must be at most 50 characters")
@@ -14,6 +21,9 @@ var (
 	ErrAliasProfanity    = errors.New("alias contains inappropriate content")
 )
 
+// reservedWords blocks aliases that collide with internal routes and
+// well-known URL paths. Without this check, a user could claim "api" or
+// "health" as a short link and shadow critical endpoints.
 var reservedWords = map[string]bool{
 	"api":       true,
 	"admin":     true,
@@ -39,6 +49,11 @@ var reservedWords = map[string]bool{
 	"ftp":       true,
 }
 
+// profanityWords blocks offensive, abusive, and potentially harmful content
+// from appearing in short-link aliases. This includes slurs, explicit terms,
+// common spam/scam keywords, and social-engineering phrases. The list is
+// checked both as exact matches and as substring matches to catch compound
+// aliases like "mypornsite".
 var profanityWords = map[string]bool{
 	"fuck": true, "fucking": true, "fucker": true, "shit": true, "bullshit": true,
 	"bitch": true, "bastard": true, "asshole": true, "dick": true, "dumbass": true,
@@ -87,8 +102,16 @@ var profanityWords = map[string]bool{
 	"weapon": true, "gun": true, "bomb": true, "explosive": true,
 }
 
+// aliasRegex enforces a URL-safe character set. Only ASCII letters, digits,
+// hyphens, and underscores are allowed. This avoids encoding issues in URLs
+// and prevents visually confusing aliases with special characters.
 var aliasRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+// ValidateAlias runs all validation rules against a proposed custom alias.
+// Checks are ordered from cheapest to most expensive: length, regex, reserved
+// word exact match, profanity exact match, and finally profanity substring
+// scan. The function returns the first error encountered (fail-fast) so the
+// user gets a single, actionable message.
 func ValidateAlias(alias string) error {
 	lowerAlias := strings.ToLower(alias)
 
@@ -120,6 +143,11 @@ func ValidateAlias(alias string) error {
 	return nil
 }
 
+// SuggestAlternatives generates simple numeric suffixed variations of an alias
+// (e.g., "mylink-1", "mylink-2") to help the user pick an available name when
+// their first choice is taken. The suggestions are deterministic -- they
+// always append "-1" through "-N" -- which keeps the implementation simple.
+// A future improvement could check the database to guarantee availability.
 func SuggestAlternatives(alias string, count int) []string {
 	suggestions := make([]string, 0, count)
 

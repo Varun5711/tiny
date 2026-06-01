@@ -6,6 +6,9 @@ import (
 	"testing"
 )
 
+// TestNewGenerator validates the constructor's input bounds checking. The
+// datacenter and worker IDs are each 5 bits, so valid values are 0-31.
+// The test covers zero, maximum, mid-range, negative, and out-of-range inputs.
 func TestNewGenerator(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -49,6 +52,8 @@ func TestNewGenerator(t *testing.T) {
 	}
 }
 
+// TestNextID verifies basic ID generation: IDs must be non-zero, unique, and
+// monotonically increasing (since the timestamp component dominates ordering).
 func TestNextID(t *testing.T) {
 	gen, err := NewGenerator(1, 1)
 	if err != nil {
@@ -80,6 +85,9 @@ func TestNextID(t *testing.T) {
 	t.Logf("Generated IDs: %d, %d", id1, id2)
 }
 
+// TestUniqueIDs generates 10,000 IDs sequentially from a single generator
+// and verifies that no duplicates are produced. This exercises the sequence
+// counter within a single millisecond window.
 func TestUniqueIDs(t *testing.T) {
 	gen, err := NewGenerator(1, 1)
 	if err != nil {
@@ -104,6 +112,10 @@ func TestUniqueIDs(t *testing.T) {
 	t.Logf("Successfully generated %d unique IDs", count)
 }
 
+// TestConcurrentGeneration validates thread safety by generating IDs from
+// 10 goroutines simultaneously. This is the most critical test for a
+// Snowflake generator, as the mutex must correctly serialize access to the
+// sequence counter and lastTimestamp fields across concurrent callers.
 func TestConcurrentGeneration(t *testing.T) {
 	gen, err := NewGenerator(1, 1)
 	if err != nil {
@@ -159,6 +171,10 @@ func TestConcurrentGeneration(t *testing.T) {
 	t.Logf("Successfully generated %d unique IDs across %d goroutines", len(ids), numGoroutines)
 }
 
+// TestIDStructure verifies that the datacenter and worker IDs are correctly
+// embedded in the generated Snowflake ID by extracting them with bit-shifting
+// and masking. This ensures the bit layout matches the documented format:
+// [41-bit timestamp][5-bit datacenter][5-bit worker][12-bit sequence].
 func TestIDStructure(t *testing.T) {
 	datacenterID := int64(5)
 	workerID := int64(10)
@@ -173,19 +189,27 @@ func TestIDStructure(t *testing.T) {
 		t.Fatalf("NextID() error: %v", err)
 	}
 
+	// Extract the datacenter ID from bits 17-21 by right-shifting past the
+	// worker and sequence bits, then masking to 5 bits.
 	extractedDC := (id >> datacenterIDShift) & maxDatacenterID
 	if extractedDC != datacenterID {
 		t.Errorf("datacenter ID in ID = %d, want %d", extractedDC, datacenterID)
 	}
 
+	// Extract the worker ID from bits 12-16 by right-shifting past the
+	// sequence bits, then masking to 5 bits.
 	extractedWorker := (id >> workerIDShift) & maxWorkerID
 	if extractedWorker != workerID {
 		t.Errorf("worker ID in ID = %d, want %d", extractedWorker, workerID)
 	}
 
-	t.Logf("ID: %d contains datacenter=%d, worker=%d ✓", id, extractedDC, extractedWorker)
+	t.Logf("ID: %d contains datacenter=%d, worker=%d", id, extractedDC, extractedWorker)
 }
 
+// TestBase62Conversion performs an end-to-end integration test of the full
+// ID pipeline: Snowflake generation -> Base62 encoding -> Base62 decoding.
+// It verifies that the round trip is lossless and that the resulting short
+// codes are compact (at most 12 characters for any valid Snowflake ID).
 func TestBase62Conversion(t *testing.T) {
 	gen, err := NewGenerator(1, 1)
 	if err != nil {
@@ -213,10 +237,11 @@ func TestBase62Conversion(t *testing.T) {
 			t.Errorf("short code too long: %s (%d chars)", shortCode, len(shortCode))
 		}
 
-		t.Logf("ID %d → %s (length: %d)", id, shortCode, len(shortCode))
+		t.Logf("ID %d -> %s (length: %d)", id, shortCode, len(shortCode))
 	}
 }
 
+// BenchmarkNextID measures single-threaded ID generation throughput.
 func BenchmarkNextID(b *testing.B) {
 	gen, _ := NewGenerator(1, 1)
 	b.ResetTimer()
@@ -229,6 +254,9 @@ func BenchmarkNextID(b *testing.B) {
 	}
 }
 
+// BenchmarkNextIDParallel measures ID generation throughput under contention
+// from multiple goroutines, which is the realistic production scenario.
+// This benchmark reveals the cost of mutex contention on the generator.
 func BenchmarkNextIDParallel(b *testing.B) {
 	gen, _ := NewGenerator(1, 1)
 	b.ResetTimer()
